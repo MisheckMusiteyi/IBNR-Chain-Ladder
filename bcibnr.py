@@ -126,6 +126,22 @@ st.markdown("""
         margin-bottom: 0;
     }
     
+    /* Error Container */
+    .error-container {
+        background-color: #FFEBEE;
+        border: 2px solid #F44336;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .error-container h3 {
+        color: #F44336;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
     /* Cards */
     .card {
         background-color: #F9F9F9;
@@ -352,25 +368,63 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- Convert dates with explicit format to avoid warnings ---
-        date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
+        # --- DETAILED DATE PARSING WITH ERROR REPORTING ---
+        # Store original values for error reporting
+        original_loss_dates = df_processed['Loss_Date'].copy()
+        original_report_dates = df_processed['Report_Date'].copy()
+        
+        # Try common date formats
+        date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%Y%m%d']
+        
+        loss_date_parsed = None
+        report_date_parsed = None
         
         for fmt in date_formats:
             try:
-                df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], format=fmt, errors='coerce')
-                df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], format=fmt, errors='coerce')
-                if not df_processed['Loss_Date'].isna().all() and not df_processed['Report_Date'].isna().all():
-                    break
+                if loss_date_parsed is None:
+                    loss_date_parsed = pd.to_datetime(df_processed['Loss_Date'], format=fmt, errors='coerce')
+                if report_date_parsed is None:
+                    report_date_parsed = pd.to_datetime(df_processed['Report_Date'], format=fmt, errors='coerce')
             except:
                 continue
         
-        if df_processed['Loss_Date'].isna().all():
-            df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
-        if df_processed['Report_Date'].isna().all():
-            df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
+        if loss_date_parsed is None:
+            loss_date_parsed = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
+        if report_date_parsed is None:
+            report_date_parsed = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
         
-        if df_processed['Loss_Date'].isna().any() or df_processed['Report_Date'].isna().any():
-            st.error("Some dates could not be parsed. Please check your date columns.")
+        df_processed['Loss_Date'] = loss_date_parsed
+        df_processed['Report_Date'] = report_date_parsed
+        
+        # Find problematic dates
+        bad_loss_dates = original_loss_dates[df_processed['Loss_Date'].isna() & original_loss_dates.notna()]
+        bad_report_dates = original_report_dates[df_processed['Report_Date'].isna() & original_report_dates.notna()]
+        
+        # Show detailed error if any dates couldn't be parsed
+        if not bad_loss_dates.empty or not bad_report_dates.empty:
+            st.markdown("""
+            <div class="error-container">
+                <h3>Date Parsing Errors</h3>
+                <p>The following date values could not be parsed. Please check these entries in your file.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if not bad_loss_dates.empty:
+                st.write("**Invalid Loss_Date values (first 10):**")
+                bad_loss_list = bad_loss_dates.head(10).tolist()
+                for i, val in enumerate(bad_loss_list, 1):
+                    st.write(f"{i}. {repr(val)}")
+                if len(bad_loss_dates) > 10:
+                    st.write(f"... and {len(bad_loss_dates) - 10} more")
+            
+            if not bad_report_dates.empty:
+                st.write("**Invalid Report_Date values (first 10):**")
+                bad_report_list = bad_report_dates.head(10).tolist()
+                for i, val in enumerate(bad_report_list, 1):
+                    st.write(f"{i}. {repr(val)}")
+                if len(bad_report_dates) > 10:
+                    st.write(f"... and {len(bad_report_dates) - 10} more")
+            
             st.stop()
 
         # --- Filter data by IBNR period (date range) ---
