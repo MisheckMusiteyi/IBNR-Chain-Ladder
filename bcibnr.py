@@ -104,6 +104,28 @@ st.markdown("""
         line-height: 1.3;
     }
     
+    /* Date Range Container */
+    .date-range-container {
+        background-color: #F9F9F9;
+        border: 2px solid #D4AF37;
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .date-range-container h3 {
+        color: #D4AF37;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    .date-range-container p {
+        color: #666666;
+        font-size: 0.85rem;
+        margin-bottom: 0;
+    }
+    
     /* Cards */
     .card {
         background-color: #F9F9F9;
@@ -193,7 +215,7 @@ st.markdown("""
 st.markdown("""
 <div class="hero">
     <h1>Chain Ladder IBNR Calculator</h1>
-    <p>Upload your claims data (CSV or Excel). Map your columns, select a date range, and choose the currency columns. The app computes IBNR and Ultimate claims by product using the Chain Ladder method.</p>
+    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period (date range), and choose the currency columns. The app computes IBNR and Ultimate claims by product using the Chain Ladder method.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -201,16 +223,33 @@ st.markdown("""
 st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
 # --- User inputs ---
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 with col1:
     client_name = st.text_input("Client Name (for file name)", value="Client").strip()
 with col2:
-    from_date = st.date_input("From Date (Loss Date)", value=date(2020, 1, 1))
-with col3:
-    to_date = st.date_input("To Date (Loss Date)", value=date(2024, 12, 31))
+    pass
+
+# --- IBNR Period Selection with clear labels ---
+st.markdown("""
+<div class="date-range-container">
+    <h3>📅 IBNR Period</h3>
+    <p>Select the date range for claims to be included in the IBNR calculation</p>
+</div>
+""", unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+with col1:
+    from_date = st.date_input("From Date (Start of IBNR Period)", value=date(2020, 1, 1))
+    st.caption("Claims with Loss Date on or after this date")
+with col2:
+    to_date = st.date_input("To Date (End of IBNR Period)", value=date(2024, 12, 31))
+    st.caption("Claims with Loss Date on or before this date")
 
 from_date = pd.to_datetime(from_date)
 to_date = pd.to_datetime(to_date)
+
+# Display selected period summary
+st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 
 # File uploader
 uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
@@ -314,7 +353,6 @@ if uploaded_file is not None:
         })
 
         # --- Convert dates with explicit format to avoid warnings ---
-        # Try common date formats
         date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
         
         for fmt in date_formats:
@@ -326,7 +364,6 @@ if uploaded_file is not None:
             except:
                 continue
         
-        # If still not parsed, use default with errors='coerce'
         if df_processed['Loss_Date'].isna().all():
             df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
         if df_processed['Report_Date'].isna().all():
@@ -336,17 +373,17 @@ if uploaded_file is not None:
             st.error("Some dates could not be parsed. Please check your date columns.")
             st.stop()
 
-        # --- Filter data by date range ---
+        # --- Filter data by IBNR period (date range) ---
         df_filtered = df_processed[
             (df_processed['Loss_Date'] >= from_date) & 
             (df_processed['Loss_Date'] <= to_date)
         ]
         
         if df_filtered.empty:
-            st.error(f"No data found for the selected date range: {from_date.date()} to {to_date.date()}")
+            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
             st.stop()
         
-        st.success(f"Data filtered: {len(df_filtered)} rows remaining (from {len(df_processed)} total)")
+        st.success(f"**IBNR Period Filter Applied:** {len(df_filtered)} claims selected (from {len(df_processed)} total)")
 
         # --- Identify numeric columns for selection ---
         numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
@@ -387,7 +424,7 @@ if uploaded_file is not None:
             mapping_df = pd.DataFrame(mapping_data)
             st.dataframe(mapping_df, use_container_width=True)
             
-            st.markdown(f"**Date Range Filter:** {from_date.date()} to {to_date.date()}")
+            st.markdown(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
             st.markdown(f"**Selected numeric columns:** {', '.join(selected_columns)}")
 
         # --- Create Triangle ---
@@ -425,7 +462,11 @@ if uploaded_file is not None:
         ibnr_summary = ibnr_reset.groupby('Product')[selected_columns].sum().reset_index()
         ultimate_summary = ultimate_reset.groupby('Product')[selected_columns].sum().reset_index()
 
-        # Display results
+        # Display results with period label
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
         col1, col2 = st.columns(2)
         with col1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -454,7 +495,7 @@ if uploaded_file is not None:
         dcol1, dcol2 = st.columns(2)
         with dcol1:
             safe_client = "".join(c for c in client_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            ibnr_filename = f"{safe_client}_IBNR_Summary.xlsx" if safe_client else "IBNR_Summary.xlsx"
+            ibnr_filename = f"{safe_client}_IBNR_Summary_{from_date.year}_{to_date.year}.xlsx" if safe_client else f"IBNR_Summary_{from_date.year}_{to_date.year}.xlsx"
             st.download_button(
                 label="Download IBNR Summary (Excel)",
                 data=output_ibnr,
@@ -463,7 +504,7 @@ if uploaded_file is not None:
             )
         with dcol2:
             safe_client = "".join(c for c in client_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            ultimate_filename = f"{safe_client}_Ultimate_Summary.xlsx" if safe_client else "Ultimate_Summary.xlsx"
+            ultimate_filename = f"{safe_client}_Ultimate_Summary_{from_date.year}_{to_date.year}.xlsx" if safe_client else f"Ultimate_Summary_{from_date.year}_{to_date.year}.xlsx"
             st.download_button(
                 label="Download Ultimate Summary (Excel)",
                 data=output_ultimate,
