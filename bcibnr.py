@@ -248,7 +248,7 @@ with col2:
 # --- IBNR Period Selection with clear labels ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>IBNR Period</h3>
+    <h3>📅 IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation</p>
 </div>
 """, unsafe_allow_html=True)
@@ -283,7 +283,8 @@ if uploaded_file is not None:
                 df = pd.read_csv(uploaded_file, encoding='cp1252')
                 st.info("File read with Windows-1252 encoding.")
         else:
-            df = pd.read_excel(uploaded_file)
+            # For Excel files, read dates as strings first to see raw values
+            df = pd.read_excel(uploaded_file, dtype=str)
 
         # Drop unnamed columns
         unnamed = [c for c in df.columns if c.startswith('Unnamed:')]
@@ -368,8 +369,8 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- DETAILED DATE PARSING WITH DATA TYPE REPORTING ---
-        # Store original values and data types for error reporting
+        # --- IMPROVED DATE CONVERSION FOR EXCEL ---
+        # Store original values for error reporting
         original_loss_dates = df_processed['Loss_Date'].copy()
         original_report_dates = df_processed['Report_Date'].copy()
         
@@ -377,28 +378,27 @@ if uploaded_file is not None:
         loss_date_dtype = df[loss_date_col].dtype
         report_date_dtype = df[report_date_col].dtype
         
-        # Try common date formats
-        date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%Y%m%d']
+        # Function to convert Excel serial numbers or text dates
+        def convert_to_datetime(series, column_name):
+            # First, try to convert using pandas (handles Excel serial numbers automatically)
+            converted = pd.to_datetime(series, errors='coerce')
+            
+            # If all are NaN, try with explicit formats
+            if converted.isna().all():
+                date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
+                for fmt in date_formats:
+                    try:
+                        converted = pd.to_datetime(series, format=fmt, errors='coerce')
+                        if not converted.isna().all():
+                            break
+                    except:
+                        continue
+            
+            return converted
         
-        loss_date_parsed = None
-        report_date_parsed = None
-        
-        for fmt in date_formats:
-            try:
-                if loss_date_parsed is None:
-                    loss_date_parsed = pd.to_datetime(df_processed['Loss_Date'], format=fmt, errors='coerce')
-                if report_date_parsed is None:
-                    report_date_parsed = pd.to_datetime(df_processed['Report_Date'], format=fmt, errors='coerce')
-            except:
-                continue
-        
-        if loss_date_parsed is None:
-            loss_date_parsed = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
-        if report_date_parsed is None:
-            report_date_parsed = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
-        
-        df_processed['Loss_Date'] = loss_date_parsed
-        df_processed['Report_Date'] = report_date_parsed
+        # Apply conversion
+        df_processed['Loss_Date'] = convert_to_datetime(df_processed['Loss_Date'], 'Loss_Date')
+        df_processed['Report_Date'] = convert_to_datetime(df_processed['Report_Date'], 'Report_Date')
         
         # Find problematic dates
         bad_loss_dates = original_loss_dates[df_processed['Loss_Date'].isna() & original_loss_dates.notna()]
@@ -408,7 +408,7 @@ if uploaded_file is not None:
         if not bad_loss_dates.empty or not bad_report_dates.empty:
             st.markdown("""
             <div class="error-container">
-                <h3>Date Parsing Errors</h3>
+                <h3>⚠️ Date Parsing Errors</h3>
                 <p>The following date values could not be parsed. Please check these entries in your file.</p>
             </div>
             """, unsafe_allow_html=True)
@@ -443,7 +443,7 @@ if uploaded_file is not None:
             st.stop()
 
         # Show success message that dates were converted
-        st.success(f"Date columns successfully converted to datetime format!")
+        st.success(f"✅ Date columns successfully converted to datetime format!")
         st.caption(f"Loss_Date column '{loss_date_col}' converted from {loss_date_dtype} to datetime64")
         st.caption(f"Report_Date column '{report_date_col}' converted from {report_date_dtype} to datetime64")
 
