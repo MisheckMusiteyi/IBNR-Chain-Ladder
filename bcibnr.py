@@ -126,22 +126,6 @@ st.markdown("""
         margin-bottom: 0;
     }
     
-    /* Error Container */
-    .error-container {
-        background-color: #FFEBEE;
-        border: 2px solid #F44336;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .error-container h3 {
-        color: #F44336;
-        margin-top: 0;
-        margin-bottom: 0.5rem;
-        font-size: 1.2rem;
-        font-weight: bold;
-    }
-    
     /* Cards */
     .card {
         background-color: #F9F9F9;
@@ -341,61 +325,31 @@ if uploaded_file is not None:
         with req_col3:
             st.markdown("""
             <div class="required-container">
-                <h3>Product</h3>
+                <h3>Line_of_Business</h3>
                 <p>The category/segment for grouping results (e.g., Motor, Property, Agriculture)</p>
             </div>
             """, unsafe_allow_html=True)
-            product_col = st.selectbox(
-                "Select your Product column",
+            lob_col = st.selectbox(
+                "Select your Line of Business column",
                 options=[""] + all_columns,
-                key="product",
+                key="lob",
                 label_visibility="collapsed"
             )
-            if product_col == "":
-                product_col = None
+            if lob_col == "":
+                lob_col = None
 
         st.markdown("---")
 
         # Validate required mappings
-        if not loss_date_col or not report_date_col or not product_col:
-            st.error("Please map all required columns (Loss_Date, Report_Date, Product).")
+        if not loss_date_col or not report_date_col or not lob_col:
+            st.error("Please map all required columns (Loss_Date, Report_Date, Line_of_Business).")
             st.stop()
-
-        # --- Rename columns for internal processing ---
-        df_processed = df.rename(columns={
-            loss_date_col: 'Loss_Date',
-            report_date_col: 'Report_Date',
-            product_col: 'Product'
-        })
-
-        # --- Convert dates ---
-        df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
-        df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
-        
-        # Drop rows with invalid dates
-        df_processed = df_processed.dropna(subset=['Loss_Date', 'Report_Date'])
-        
-        if df_processed.empty:
-            st.error("No valid dates found after parsing. Please check your date columns.")
-            st.stop()
-
-        # --- Filter data by IBNR period (date range) ---
-        df_filtered = df_processed[
-            (df_processed['Loss_Date'] >= from_date) & 
-            (df_processed['Loss_Date'] <= to_date)
-        ]
-        
-        if df_filtered.empty:
-            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
-            st.stop()
-        
-        st.success(f"**IBNR Period Filter Applied:** {len(df_filtered)} claims selected (from {len(df_processed)} total)")
 
         # --- Identify numeric columns for selection ---
-        numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
         # Remove the mapped columns if they appear in numeric columns
-        exclude_cols = ['Loss_Date', 'Report_Date', 'Product']
+        exclude_cols = [loss_date_col, report_date_col, lob_col]
         for col in exclude_cols:
             if col in numeric_cols:
                 numeric_cols.remove(col)
@@ -416,10 +370,40 @@ if uploaded_file is not None:
             st.warning("Please select at least one currency column to proceed.")
             st.stop()
 
+        # --- CREATE CLEAN DATAFRAME WITH ONLY NEEDED COLUMNS ---
+        # Step 1: Extract the required date and LOB columns
+        df_clean = pd.DataFrame()
+        df_clean['Loss_Date'] = pd.to_datetime(df[loss_date_col], errors='coerce')
+        df_clean['Report_Date'] = pd.to_datetime(df[report_date_col], errors='coerce')
+        df_clean['Line_of_Business'] = df[lob_col]
+        
+        # Step 2: Add the selected numeric columns
+        for col in selected_columns:
+            df_clean[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Step 3: Drop any rows with missing critical data
+        df_clean = df_clean.dropna(subset=['Loss_Date', 'Report_Date', 'Line_of_Business'])
+        
+        if df_clean.empty:
+            st.error("No valid data found after cleaning. Please check your date columns.")
+            st.stop()
+
+        # --- Filter data by IBNR period (date range) ---
+        df_filtered = df_clean[
+            (df_clean['Loss_Date'] >= from_date) & 
+            (df_clean['Loss_Date'] <= to_date)
+        ]
+        
+        if df_filtered.empty:
+            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
+            st.stop()
+        
+        st.success(f"**IBNR Period Filter Applied:** {len(df_filtered)} claims selected (from {len(df_clean)} total)")
+
         # Show data summary before triangle creation
         with st.expander("View Data Summary Before Triangle Creation"):
             st.write(f"**Number of rows after filtering:** {len(df_filtered)}")
-            st.write(f"**Unique Products:** {df_filtered['Product'].nunique()}")
+            st.write(f"**Unique Lines of Business:** {df_filtered['Line_of_Business'].nunique()}")
             st.write(f"**Date range in filtered data:** {df_filtered['Loss_Date'].min()} to {df_filtered['Loss_Date'].max()}")
             st.write(f"**Selected columns:** {selected_columns}")
             
@@ -427,60 +411,20 @@ if uploaded_file is not None:
             st.write("**Sample of filtered data (first 10 rows):**")
             st.dataframe(df_filtered.head(10))
 
-        # --- Create Triangle (ORIGINAL WORKING METHOD) ---
+        # --- Create Triangle ---
         try:
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin='Loss_Date',
                 development='Report_Date',
                 columns=selected_columns,
-                index='Product',
+                index='Line_of_Business',
                 cumulative=False
             )
             st.success("Triangle created successfully!")
             
         except Exception as e:
             st.error(f"Error creating triangle: {str(e)}")
-            
-            # Provide more detailed debugging information
-            st.markdown("""
-            <div class="error-container">
-                <h3>❌ Triangle Creation Failed</h3>
-                <p><strong>Error Type:</strong> {type(e).__name__}</p>
-                <p><strong>Error Message:</strong> {str(e)}</p>
-                <p><strong>Possible causes and solutions:</strong></p>
-                <ul>
-                    <li><strong>Insufficient data:</strong> The filtered period may have too few claims to form a valid triangle. Try expanding your date range.</li>
-                    <li><strong>Missing development periods:</strong> Ensure you have claims with different Report_Date values after the Loss_Date.</li>
-                    <li><strong>Data quality issues:</strong> Check that Report_Date is always after Loss_Date.</li>
-                    <li><strong>Single product only:</strong> The triangle needs at least 2 development periods to run Chain Ladder.</li>
-                </ul>
-                <p><strong>Debugging tips:</strong></p>
-                <ul>
-                    <li>Check the "View Data Summary" expander above to see your data structure.</li>
-                    <li>Verify that Report_Date > Loss_Date for all rows.</li>
-                    <li>Ensure you have multiple development periods (different Report_Date values).</li>
-                </ul>
-            </div>
-            """.format(type=type(e), str=str(e)), unsafe_allow_html=True)
-            
-            # Check specific conditions
-            st.write("**Data Quality Checks:**")
-            
-            # Check if Report_Date is after Loss_Date
-            invalid_dates = df_filtered[df_filtered['Report_Date'] <= df_filtered['Loss_Date']]
-            if not invalid_dates.empty:
-                st.warning(f"⚠️ Found {len(invalid_dates)} rows where Report_Date is not after Loss_Date")
-                st.dataframe(invalid_dates[['Loss_Date', 'Report_Date']].head())
-            
-            # Check number of unique development periods per product
-            for product in df_filtered['Product'].unique():
-                product_data = df_filtered[df_filtered['Product'] == product]
-                dev_periods = (product_data['Report_Date'].dt.year - product_data['Loss_Date'].dt.year).nunique()
-                st.write(f"Product '{product}': {dev_periods} unique development periods")
-                if dev_periods < 2:
-                    st.warning(f"⚠️ Product '{product}' has only {dev_periods} development period(s). Need at least 2 for Chain Ladder.")
-            
             st.stop()
 
         # --- Fit Chain Ladder model ---
@@ -495,15 +439,15 @@ if uploaded_file is not None:
         ibnr = model.ibnr_
         ultimate = model.ultimate_
 
-        # Convert to DataFrame and group by Product
+        # Convert to DataFrame and group by Line_of_Business
         ibnr_df = ibnr.to_frame()
         ultimate_df = ultimate.to_frame()
 
         ibnr_reset = ibnr_df.reset_index()
         ultimate_reset = ultimate_df.reset_index()
 
-        ibnr_summary = ibnr_reset.groupby('Product')[selected_columns].sum().reset_index()
-        ultimate_summary = ultimate_reset.groupby('Product')[selected_columns].sum().reset_index()
+        ibnr_summary = ibnr_reset.groupby('Line_of_Business')[selected_columns].sum().reset_index()
+        ultimate_summary = ultimate_reset.groupby('Line_of_Business')[selected_columns].sum().reset_index()
 
         # Display results with period label
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -513,13 +457,13 @@ if uploaded_file is not None:
         col1, col2 = st.columns(2)
         with col1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR by Product")
+            st.subheader("IBNR by Line of Business")
             st.dataframe(ibnr_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col2:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("Ultimate Claims by Product")
+            st.subheader("Ultimate Claims by Line of Business")
             st.dataframe(ultimate_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
