@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import chainladder as cl
+import traceback
 from io import BytesIO
 from datetime import date
 
@@ -126,6 +127,54 @@ st.markdown("""
         margin-bottom: 0;
     }
     
+    /* Error Container */
+    .error-container {
+        background-color: #FFEBEE;
+        border: 2px solid #F44336;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .error-container h3 {
+        color: #F44336;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
+    /* Success Container */
+    .success-container {
+        background-color: #E8F5E9;
+        border: 2px solid #4CAF50;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .success-container h3 {
+        color: #4CAF50;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
+    /* Info Container */
+    .info-container {
+        background-color: #E3F2FD;
+        border: 2px solid #2196F3;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .info-container h3 {
+        color: #2196F3;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
     /* Cards */
     .card {
         background-color: #F9F9F9;
@@ -232,7 +281,7 @@ with col2:
 # --- IBNR Period Selection ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>📅 IBNR Period</h3>
+    <h3>IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation (based on Loss Date)</p>
 </div>
 """, unsafe_allow_html=True)
@@ -251,7 +300,7 @@ to_date = pd.to_datetime(to_date)
 # Display selected period summary
 st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 
-# File uploader (CSV and Excel)
+# File uploader
 uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
 
 if uploaded_file is not None:
@@ -352,37 +401,57 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- Convert dates (simple and working) ---
+        # --- Convert dates ---
         df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
         df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
         
         if df_processed['Loss_Date'].isna().any() or df_processed['Report_Date'].isna().any():
-            st.error("Some dates could not be parsed. Please check your date columns.")
+            st.markdown("""
+            <div class="error-container">
+                <h3>Date Parsing Error</h3>
+                <p>Some dates could not be parsed. Please check your date columns for invalid values.</p>
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
 
-        # --- Filter data by IBNR period (date range) ---
+        # --- Filter data by IBNR period ---
         df_filtered = df_processed[
             (df_processed['Loss_Date'] >= from_date) & 
             (df_processed['Loss_Date'] <= to_date)
         ]
         
         if df_filtered.empty:
-            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
+            st.markdown(f"""
+            <div class="error-container">
+                <h3>No Data Found</h3>
+                <p>No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}</p>
+                <p>Please adjust your date range or check your data.</p>
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
         
-        st.success(f"**IBNR Period Filter Applied:** {len(df_filtered)} claims selected (from {len(df_processed)} total)")
+        st.markdown(f"""
+        <div class="success-container">
+            <h3>IBNR Period Filter Applied</h3>
+            <p>{len(df_filtered)} claims selected (from {len(df_processed)} total)</p>
+        </div>
+        """, unsafe_allow_html=True)
 
         # --- Identify numeric columns for selection ---
         numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
         
-        # Remove the mapped columns if they appear in numeric columns
         exclude_cols = ['Loss_Date', 'Report_Date', 'Product']
         for col in exclude_cols:
             if col in numeric_cols:
                 numeric_cols.remove(col)
 
         if not numeric_cols:
-            st.error("No numeric columns found in the data. Please ensure you have numeric columns for claim amounts.")
+            st.markdown("""
+            <div class="error-container">
+                <h3>No Numeric Columns Found</h3>
+                <p>No numeric columns found in the data. Please ensure you have numeric columns for claim amounts.</p>
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
 
         # Multi-select for currency columns
@@ -414,7 +483,7 @@ if uploaded_file is not None:
             st.markdown(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
             st.markdown(f"**Selected numeric columns:** {', '.join(selected_columns)}")
 
-        # --- Create Triangle (ORIGINAL WORKING METHOD) ---
+        # --- Create Triangle ---
         try:
             triangle = cl.Triangle(
                 data=df_filtered,
@@ -424,15 +493,50 @@ if uploaded_file is not None:
                 index='Product',
                 cumulative=False
             )
+            st.markdown("""
+            <div class="success-container">
+                <h3>Triangle Created Successfully</h3>
+                <p>Triangle shape: {triangle.shape}</p>
+            </div>
+            """, unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Error creating triangle: {e}")
+            st.markdown(f"""
+            <div class="error-container">
+                <h3>Triangle Creation Error</h3>
+                <p><strong>Error Type:</strong> {type(e).__name__}</p>
+                <p><strong>Error Message:</strong> {str(e)}</p>
+                <p><strong>Possible causes:</strong></p>
+                <ul>
+                    <li>Insufficient data for triangle formation</li>
+                    <li>Date columns have unexpected formats</li>
+                    <li>Missing development periods</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
 
         # --- Fit Chain Ladder model ---
         try:
             model = cl.Chainladder().fit(triangle)
+            st.markdown("""
+            <div class="success-container">
+                <h3>Chain Ladder Model Fitted Successfully</h3>
+            </div>
+            """, unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Error fitting Chain Ladder model: {e}")
+            st.markdown(f"""
+            <div class="error-container">
+                <h3>Model Fitting Error</h3>
+                <p><strong>Error Type:</strong> {type(e).__name__}</p>
+                <p><strong>Error Message:</strong> {str(e)}</p>
+                <p><strong>Possible causes:</strong></p>
+                <ul>
+                    <li>Triangle has insufficient development periods</li>
+                    <li>Negative or zero values in the triangle</li>
+                    <li>Missing data in the triangle</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
 
         # Extract IBNR and Ultimate
@@ -449,10 +553,12 @@ if uploaded_file is not None:
         ibnr_summary = ibnr_reset.groupby('Product')[selected_columns].sum().reset_index()
         ultimate_summary = ultimate_reset.groupby('Product')[selected_columns].sum().reset_index()
 
-        # Display results with period label
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Display results
+        st.markdown(f"""
+        <div class="card">
+            <h3>IBNR Results for Period: {from_date.date()} to {to_date.date()}</h3>
+        </div>
+        """, unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -500,8 +606,22 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
-        st.write("Please check your file format and column selections.")
+        st.markdown(f"""
+        <div class="error-container">
+            <h3>Unexpected Error</h3>
+            <p><strong>Error Type:</strong> {type(e).__name__}</p>
+            <p><strong>Error Message:</strong> {str(e)}</p>
+            <p><strong>Traceback:</strong></p>
+            <pre>{traceback.format_exc()}</pre>
+            <p><strong>Please check:</strong></p>
+            <ul>
+                <li>Your file format and column selections</li>
+                <li>That all required columns are properly mapped</li>
+                <li>That date columns contain valid dates</li>
+                <li>That numeric columns contain numbers</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)  # close main-container
 
