@@ -248,7 +248,7 @@ with col2:
 # --- IBNR Period Selection with clear labels ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>📅 IBNR Period</h3>
+    <h3>IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation</p>
 </div>
 """, unsafe_allow_html=True)
@@ -368,22 +368,84 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- Convert dates ---
-        df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
-        df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
+        # --- DETAILED DATE PARSING WITH DATA TYPE REPORTING ---
+        # Store original values and data types for error reporting
+        original_loss_dates = df_processed['Loss_Date'].copy()
+        original_report_dates = df_processed['Report_Date'].copy()
         
-        # Check for any date parsing issues
-        if df_processed['Loss_Date'].isna().any():
-            st.warning(f"Some Loss_Date values could not be parsed. Check your data.")
-        if df_processed['Report_Date'].isna().any():
-            st.warning(f"Some Report_Date values could not be parsed. Check your data.")
+        # Get the data types of the original columns
+        loss_date_dtype = df[loss_date_col].dtype
+        report_date_dtype = df[report_date_col].dtype
         
-        # Drop rows with invalid dates
-        df_processed = df_processed.dropna(subset=['Loss_Date', 'Report_Date'])
+        # Try common date formats
+        date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%Y%m%d']
         
-        if df_processed.empty:
-            st.error("No valid date rows found after parsing. Please check your date columns.")
+        loss_date_parsed = None
+        report_date_parsed = None
+        
+        for fmt in date_formats:
+            try:
+                if loss_date_parsed is None:
+                    loss_date_parsed = pd.to_datetime(df_processed['Loss_Date'], format=fmt, errors='coerce')
+                if report_date_parsed is None:
+                    report_date_parsed = pd.to_datetime(df_processed['Report_Date'], format=fmt, errors='coerce')
+            except:
+                continue
+        
+        if loss_date_parsed is None:
+            loss_date_parsed = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
+        if report_date_parsed is None:
+            report_date_parsed = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
+        
+        df_processed['Loss_Date'] = loss_date_parsed
+        df_processed['Report_Date'] = report_date_parsed
+        
+        # Find problematic dates
+        bad_loss_dates = original_loss_dates[df_processed['Loss_Date'].isna() & original_loss_dates.notna()]
+        bad_report_dates = original_report_dates[df_processed['Report_Date'].isna() & original_report_dates.notna()]
+        
+        # Show detailed error if any dates couldn't be parsed
+        if not bad_loss_dates.empty or not bad_report_dates.empty:
+            st.markdown("""
+            <div class="error-container">
+                <h3>Date Parsing Errors</h3>
+                <p>The following date values could not be parsed. Please check these entries in your file.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if not bad_loss_dates.empty:
+                st.write(f"**Loss_Date Column Issues:**")
+                st.write(f"- Column name: `{loss_date_col}`")
+                st.write(f"- Current data type: `{loss_date_dtype}`")
+                st.write(f"- Expected data type: `datetime64`")
+                st.write(f"- Number of invalid values: {len(bad_loss_dates)}")
+                st.write("**Invalid values (first 10):**")
+                bad_loss_list = bad_loss_dates.head(10).tolist()
+                for i, val in enumerate(bad_loss_list, 1):
+                    st.write(f"{i}. {repr(val)}")
+                if len(bad_loss_dates) > 10:
+                    st.write(f"... and {len(bad_loss_dates) - 10} more")
+                st.write("")
+            
+            if not bad_report_dates.empty:
+                st.write(f"**Report_Date Column Issues:**")
+                st.write(f"- Column name: `{report_date_col}`")
+                st.write(f"- Current data type: `{report_date_dtype}`")
+                st.write(f"- Expected data type: `datetime64`")
+                st.write(f"- Number of invalid values: {len(bad_report_dates)}")
+                st.write("**Invalid values (first 10):**")
+                bad_report_list = bad_report_dates.head(10).tolist()
+                for i, val in enumerate(bad_report_list, 1):
+                    st.write(f"{i}. {repr(val)}")
+                if len(bad_report_dates) > 10:
+                    st.write(f"... and {len(bad_report_dates) - 10} more")
+            
             st.stop()
+
+        # Show success message that dates were converted
+        st.success(f"Date columns successfully converted to datetime format!")
+        st.caption(f"Loss_Date column '{loss_date_col}' converted from {loss_date_dtype} to datetime64")
+        st.caption(f"Report_Date column '{report_date_col}' converted from {report_date_dtype} to datetime64")
 
         # --- Filter data by IBNR period (date range) ---
         df_filtered = df_processed[
@@ -413,7 +475,7 @@ if uploaded_file is not None:
         # Multi-select for currency columns
         st.markdown("### Select Currency Columns (Claim Amounts)")
         selected_columns = st.multiselect(
-            "Choose the columns that contain claim amounts:",
+            "Choose the columns that contain claim amounts (these will be used as 'columns' in the triangle):",
             options=numeric_cols,
             default=numeric_cols[:min(3, len(numeric_cols))]
         )
@@ -422,64 +484,42 @@ if uploaded_file is not None:
             st.warning("Please select at least one currency column to proceed.")
             st.stop()
 
-        # --- Create Development Lag (years between Loss and Report Date) ---
-        df_filtered['Development_Lag'] = (df_filtered['Report_Date'].dt.year - df_filtered['Loss_Date'].dt.year)
-        df_filtered['Accident_Year'] = df_filtered['Loss_Date'].dt.year
-        
-        # Ensure development lag is non-negative
-        df_filtered['Development_Lag'] = df_filtered['Development_Lag'].clip(lower=0)
-        
-        st.info(f"Development lag calculated. Range: {df_filtered['Development_Lag'].min()} to {df_filtered['Development_Lag'].max()} years")
+        # Show mapping summary button
+        if st.button("View Column Mapping Summary"):
+            mapping_data = {
+                'Required Field': ['Loss_Date', 'Report_Date', 'Product'],
+                'Your Column': [loss_date_col, report_date_col, product_col],
+                'Description': [
+                    'Loss occurrence date (origin period)',
+                    'Claim report date (development period)',
+                    'Category for grouping results'
+                ]
+            }
+            mapping_df = pd.DataFrame(mapping_data)
+            st.dataframe(mapping_df, use_container_width=True)
+            
+            st.markdown(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
+            st.markdown(f"**Selected numeric columns:** {', '.join(selected_columns)}")
 
-        # --- Create Triangle using the chainladder package ---
+        # --- Create Triangle ---
         try:
-            # First, create a triangle using the correct format
             triangle = cl.Triangle(
                 data=df_filtered,
-                origin='Accident_Year',
-                development='Development_Lag',
+                origin='Loss_Date',
+                development='Report_Date',
                 columns=selected_columns,
                 index='Product',
-                cumulative=False  # incremental data
+                cumulative=False
             )
-            
-            st.success("Triangle created successfully!")
-            
-            # Display triangle shape for debugging
-            st.caption(f"Triangle shape: {triangle.shape}")
-            
         except Exception as e:
-            st.error(f"Error creating triangle: {str(e)}")
-            
-            # Fallback: Create manual triangle using pivot table
-            st.info("Attempting alternative triangle creation method...")
-            
-            try:
-                # Manual triangle creation using pivot table
-                pivot_data = {}
-                for col in selected_columns:
-                    pivot = df_filtered.pivot_table(
-                        index=['Product', 'Accident_Year'],
-                        columns='Development_Lag',
-                        values=col,
-                        aggfunc='sum',
-                        fill_value=0
-                    )
-                    pivot_data[col] = pivot
-                
-                st.success("Alternative triangle creation successful!")
-                st.stop()
-                
-            except Exception as e2:
-                st.error(f"Alternative method also failed: {str(e2)}")
-                st.stop()
+            st.error(f"Error creating triangle: {e}")
+            st.stop()
 
         # --- Fit Chain Ladder model ---
         try:
             model = cl.Chainladder().fit(triangle)
-            st.success("Chain Ladder model fitted successfully!")
         except Exception as e:
-            st.error(f"Error fitting Chain Ladder model: {str(e)}")
+            st.error(f"Error fitting Chain Ladder model: {e}")
             st.stop()
 
         # Extract IBNR and Ultimate
@@ -493,7 +533,6 @@ if uploaded_file is not None:
         ibnr_reset = ibnr_df.reset_index()
         ultimate_reset = ultimate_df.reset_index()
 
-        # Group by Product and sum the selected columns
         ibnr_summary = ibnr_reset.groupby('Product')[selected_columns].sum().reset_index()
         ultimate_summary = ultimate_reset.groupby('Product')[selected_columns].sum().reset_index()
 
@@ -548,7 +587,7 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
+        st.error(f"An unexpected error occurred: {e}")
         st.write("Please check your file format and column selections.")
 
 st.markdown('</div>', unsafe_allow_html=True)  # close main-container
