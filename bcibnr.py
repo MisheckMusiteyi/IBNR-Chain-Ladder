@@ -232,7 +232,7 @@ with col2:
 # --- IBNR Period Selection with clear labels ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>📅 IBNR Period</h3>
+    <h3>IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation</p>
 </div>
 """, unsafe_allow_html=True)
