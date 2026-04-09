@@ -215,7 +215,7 @@ st.markdown("""
 st.markdown("""
 <div class="hero">
     <h1>Chain Ladder IBNR Calculator</h1>
-    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period, and choose the currency columns. The app computes IBNR and Ultimate claims by product using the Chain Ladder method.</p>
+    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period (date range), and choose the currency columns. The app computes IBNR and Ultimate claims by product using the Chain Ladder method.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -352,21 +352,12 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- Convert dates ---
+        # --- Convert dates (simple and working) ---
         df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
         df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
         
-        # Check for any date parsing issues
-        if df_processed['Loss_Date'].isna().any():
-            st.warning("Some Loss_Date values could not be parsed. They will be excluded.")
-        if df_processed['Report_Date'].isna().any():
-            st.warning("Some Report_Date values could not be parsed. They will be excluded.")
-        
-        # Drop rows with invalid dates
-        df_processed = df_processed.dropna(subset=['Loss_Date', 'Report_Date'])
-        
-        if df_processed.empty:
-            st.error("No valid date rows found after parsing. Please check your date columns.")
+        if df_processed['Loss_Date'].isna().any() or df_processed['Report_Date'].isna().any():
+            st.error("Some dates could not be parsed. Please check your date columns.")
             st.stop()
 
         # --- Filter data by IBNR period (date range) ---
@@ -423,39 +414,25 @@ if uploaded_file is not None:
             st.markdown(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
             st.markdown(f"**Selected numeric columns:** {', '.join(selected_columns)}")
 
-        # --- Calculate Development Lag (years) ---
-        df_filtered['Development_Lag'] = (df_filtered['Report_Date'].dt.year - df_filtered['Loss_Date'].dt.year)
-        df_filtered['Accident_Year'] = df_filtered['Loss_Date'].dt.year
-        
-        # Ensure development lag is non-negative
-        df_filtered['Development_Lag'] = df_filtered['Development_Lag'].clip(lower=0)
-        
-        st.info(f"Development lag calculated. Range: {df_filtered['Development_Lag'].min()} to {df_filtered['Development_Lag'].max()} years")
-
-        # --- Create Triangle ---
+        # --- Create Triangle (ORIGINAL WORKING METHOD) ---
         try:
             triangle = cl.Triangle(
                 data=df_filtered,
-                origin='Accident_Year',
-                development='Development_Lag',
+                origin='Loss_Date',
+                development='Report_Date',
                 columns=selected_columns,
                 index='Product',
                 cumulative=False
             )
-            
-            st.success("Triangle created successfully!")
-            st.caption(f"Triangle shape: {triangle.shape}")
-            
         except Exception as e:
-            st.error(f"Error creating triangle: {str(e)}")
+            st.error(f"Error creating triangle: {e}")
             st.stop()
 
         # --- Fit Chain Ladder model ---
         try:
             model = cl.Chainladder().fit(triangle)
-            st.success("Chain Ladder model fitted successfully!")
         except Exception as e:
-            st.error(f"Error fitting Chain Ladder model: {str(e)}")
+            st.error(f"Error fitting Chain Ladder model: {e}")
             st.stop()
 
         # Extract IBNR and Ultimate
@@ -523,7 +500,7 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
+        st.error(f"An unexpected error occurred: {e}")
         st.write("Please check your file format and column selections.")
 
 st.markdown('</div>', unsafe_allow_html=True)  # close main-container
