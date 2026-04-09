@@ -313,11 +313,30 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- Filter data by date range ---
-        df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
-        df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
+        # --- Convert dates with explicit format to avoid warnings ---
+        # Try common date formats
+        date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
         
-        # Filter by the selected date range
+        for fmt in date_formats:
+            try:
+                df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], format=fmt, errors='coerce')
+                df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], format=fmt, errors='coerce')
+                if not df_processed['Loss_Date'].isna().all() and not df_processed['Report_Date'].isna().all():
+                    break
+            except:
+                continue
+        
+        # If still not parsed, use default with errors='coerce'
+        if df_processed['Loss_Date'].isna().all():
+            df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
+        if df_processed['Report_Date'].isna().all():
+            df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
+        
+        if df_processed['Loss_Date'].isna().any() or df_processed['Report_Date'].isna().any():
+            st.error("Some dates could not be parsed. Please check your date columns.")
+            st.stop()
+
+        # --- Filter data by date range ---
         df_filtered = df_processed[
             (df_processed['Loss_Date'] >= from_date) & 
             (df_processed['Loss_Date'] <= to_date)
@@ -333,12 +352,10 @@ if uploaded_file is not None:
         numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
         
         # Remove the mapped columns if they appear in numeric columns
-        if 'Loss_Date' in numeric_cols:
-            numeric_cols.remove('Loss_Date')
-        if 'Report_Date' in numeric_cols:
-            numeric_cols.remove('Report_Date')
-        if 'Product' in numeric_cols:
-            numeric_cols.remove('Product')
+        exclude_cols = ['Loss_Date', 'Report_Date', 'Product']
+        for col in exclude_cols:
+            if col in numeric_cols:
+                numeric_cols.remove(col)
 
         if not numeric_cols:
             st.error("No numeric columns found in the data. Please ensure you have numeric columns for claim amounts.")
@@ -357,7 +374,7 @@ if uploaded_file is not None:
             st.stop()
 
         # Show mapping summary button
-        if st.button("View Column Mapping Summary", use_container_width=False):
+        if st.button("View Column Mapping Summary"):
             mapping_data = {
                 'Required Field': ['Loss_Date', 'Report_Date', 'Product'],
                 'Your Column': [loss_date_col, report_date_col, product_col],
@@ -456,6 +473,7 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
+        st.write("Please check your file format and column selections.")
 
 st.markdown('</div>', unsafe_allow_html=True)  # close main-container
 
