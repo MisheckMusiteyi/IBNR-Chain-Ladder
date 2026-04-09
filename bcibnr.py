@@ -248,7 +248,7 @@ with col2:
 # --- IBNR Period Selection with clear labels ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>IBNR Period</h3>
+    <h3>📅 IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation</p>
 </div>
 """, unsafe_allow_html=True)
@@ -368,10 +368,14 @@ if uploaded_file is not None:
             product_col: 'Product'
         })
 
-        # --- DETAILED DATE PARSING WITH ERROR REPORTING ---
-        # Store original values for error reporting
+        # --- DETAILED DATE PARSING WITH DATA TYPE REPORTING ---
+        # Store original values and data types for error reporting
         original_loss_dates = df_processed['Loss_Date'].copy()
         original_report_dates = df_processed['Report_Date'].copy()
+        
+        # Get the data types of the original columns
+        loss_date_dtype = df[loss_date_col].dtype
+        report_date_dtype = df[report_date_col].dtype
         
         # Try common date formats
         date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%Y%m%d']
@@ -404,21 +408,32 @@ if uploaded_file is not None:
         if not bad_loss_dates.empty or not bad_report_dates.empty:
             st.markdown("""
             <div class="error-container">
-                <h3>Date Parsing Errors</h3>
+                <h3>⚠️ Date Parsing Errors</h3>
                 <p>The following date values could not be parsed. Please check these entries in your file.</p>
             </div>
             """, unsafe_allow_html=True)
             
             if not bad_loss_dates.empty:
-                st.write("**Invalid Loss_Date values (first 10):**")
+                st.write(f"**Loss_Date Column Issues:**")
+                st.write(f"- Column name: `{loss_date_col}`")
+                st.write(f"- Current data type: `{loss_date_dtype}`")
+                st.write(f"- Expected data type: `datetime64`")
+                st.write(f"- Number of invalid values: {len(bad_loss_dates)}")
+                st.write("**Invalid values (first 10):**")
                 bad_loss_list = bad_loss_dates.head(10).tolist()
                 for i, val in enumerate(bad_loss_list, 1):
                     st.write(f"{i}. {repr(val)}")
                 if len(bad_loss_dates) > 10:
                     st.write(f"... and {len(bad_loss_dates) - 10} more")
+                st.write("")
             
             if not bad_report_dates.empty:
-                st.write("**Invalid Report_Date values (first 10):**")
+                st.write(f"**Report_Date Column Issues:**")
+                st.write(f"- Column name: `{report_date_col}`")
+                st.write(f"- Current data type: `{report_date_dtype}`")
+                st.write(f"- Expected data type: `datetime64`")
+                st.write(f"- Number of invalid values: {len(bad_report_dates)}")
+                st.write("**Invalid values (first 10):**")
                 bad_report_list = bad_report_dates.head(10).tolist()
                 for i, val in enumerate(bad_report_list, 1):
                     st.write(f"{i}. {repr(val)}")
@@ -426,6 +441,11 @@ if uploaded_file is not None:
                     st.write(f"... and {len(bad_report_dates) - 10} more")
             
             st.stop()
+
+        # Show success message that dates were converted
+        st.success(f"✅ Date columns successfully converted to datetime format!")
+        st.caption(f"Loss_Date column '{loss_date_col}' converted from {loss_date_dtype} to datetime64")
+        st.caption(f"Report_Date column '{report_date_col}' converted from {report_date_dtype} to datetime64")
 
         # --- Filter data by IBNR period (date range) ---
         df_filtered = df_processed[
