@@ -248,7 +248,7 @@ with col2:
 # --- IBNR Period Selection with clear labels ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>📅 IBNR Period</h3>
+    <h3>IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation</p>
 </div>
 """, unsafe_allow_html=True)
@@ -408,7 +408,7 @@ if uploaded_file is not None:
         if not bad_loss_dates.empty or not bad_report_dates.empty:
             st.markdown("""
             <div class="error-container">
-                <h3>⚠️ Date Parsing Errors</h3>
+                <h3>Date Parsing Errors</h3>
                 <p>The following date values could not be parsed. Please check these entries in your file.</p>
             </div>
             """, unsafe_allow_html=True)
@@ -443,7 +443,7 @@ if uploaded_file is not None:
             st.stop()
 
         # Show success message that dates were converted
-        st.success(f"✅ Date columns successfully converted to datetime format!")
+        st.success(f"Date columns successfully converted to datetime format!")
         st.caption(f"Loss_Date column '{loss_date_col}' converted from {loss_date_dtype} to datetime64")
         st.caption(f"Report_Date column '{report_date_col}' converted from {report_date_dtype} to datetime64")
 
