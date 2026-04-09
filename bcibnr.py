@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import chainladder as cl
-import traceback
 from io import BytesIO
 from datetime import date
 
@@ -143,38 +142,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Success Container */
-    .success-container {
-        background-color: #E8F5E9;
-        border: 2px solid #4CAF50;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .success-container h3 {
-        color: #4CAF50;
-        margin-top: 0;
-        margin-bottom: 0.5rem;
-        font-size: 1.2rem;
-        font-weight: bold;
-    }
-    
-    /* Info Container */
-    .info-container {
-        background-color: #E3F2FD;
-        border: 2px solid #2196F3;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .info-container h3 {
-        color: #2196F3;
-        margin-top: 0;
-        margin-bottom: 0.5rem;
-        font-size: 1.2rem;
-        font-weight: bold;
-    }
-    
     /* Cards */
     .card {
         background-color: #F9F9F9;
@@ -281,7 +248,7 @@ with col2:
 # --- IBNR Period Selection ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>IBNR Period</h3>
+    <h3>📅 IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation (based on Loss Date)</p>
 </div>
 """, unsafe_allow_html=True)
@@ -405,53 +372,36 @@ if uploaded_file is not None:
         df_processed['Loss_Date'] = pd.to_datetime(df_processed['Loss_Date'], errors='coerce')
         df_processed['Report_Date'] = pd.to_datetime(df_processed['Report_Date'], errors='coerce')
         
-        if df_processed['Loss_Date'].isna().any() or df_processed['Report_Date'].isna().any():
-            st.markdown("""
-            <div class="error-container">
-                <h3>Date Parsing Error</h3>
-                <p>Some dates could not be parsed. Please check your date columns for invalid values.</p>
-            </div>
-            """, unsafe_allow_html=True)
+        # Drop rows with invalid dates
+        df_processed = df_processed.dropna(subset=['Loss_Date', 'Report_Date'])
+        
+        if df_processed.empty:
+            st.error("No valid dates found after parsing. Please check your date columns.")
             st.stop()
 
-        # --- Filter data by IBNR period ---
+        # --- Filter data by IBNR period (date range) ---
         df_filtered = df_processed[
             (df_processed['Loss_Date'] >= from_date) & 
             (df_processed['Loss_Date'] <= to_date)
         ]
         
         if df_filtered.empty:
-            st.markdown(f"""
-            <div class="error-container">
-                <h3>No Data Found</h3>
-                <p>No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}</p>
-                <p>Please adjust your date range or check your data.</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
             st.stop()
         
-        st.markdown(f"""
-        <div class="success-container">
-            <h3>IBNR Period Filter Applied</h3>
-            <p>{len(df_filtered)} claims selected (from {len(df_processed)} total)</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.success(f"**IBNR Period Filter Applied:** {len(df_filtered)} claims selected (from {len(df_processed)} total)")
 
         # --- Identify numeric columns for selection ---
         numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
         
+        # Remove the mapped columns if they appear in numeric columns
         exclude_cols = ['Loss_Date', 'Report_Date', 'Product']
         for col in exclude_cols:
             if col in numeric_cols:
                 numeric_cols.remove(col)
 
         if not numeric_cols:
-            st.markdown("""
-            <div class="error-container">
-                <h3>No Numeric Columns Found</h3>
-                <p>No numeric columns found in the data. Please ensure you have numeric columns for claim amounts.</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.error("No numeric columns found in the data. Please ensure you have numeric columns for claim amounts.")
             st.stop()
 
         # Multi-select for currency columns
@@ -466,24 +416,18 @@ if uploaded_file is not None:
             st.warning("Please select at least one currency column to proceed.")
             st.stop()
 
-        # Show mapping summary button
-        if st.button("View Column Mapping Summary"):
-            mapping_data = {
-                'Required Field': ['Loss_Date', 'Report_Date', 'Product'],
-                'Your Column': [loss_date_col, report_date_col, product_col],
-                'Description': [
-                    'Loss occurrence date (origin period)',
-                    'Claim report date (development period)',
-                    'Category for grouping results'
-                ]
-            }
-            mapping_df = pd.DataFrame(mapping_data)
-            st.dataframe(mapping_df, use_container_width=True)
+        # Show data summary before triangle creation
+        with st.expander("View Data Summary Before Triangle Creation"):
+            st.write(f"**Number of rows after filtering:** {len(df_filtered)}")
+            st.write(f"**Unique Products:** {df_filtered['Product'].nunique()}")
+            st.write(f"**Date range in filtered data:** {df_filtered['Loss_Date'].min()} to {df_filtered['Loss_Date'].max()}")
+            st.write(f"**Selected columns:** {selected_columns}")
             
-            st.markdown(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
-            st.markdown(f"**Selected numeric columns:** {', '.join(selected_columns)}")
+            # Show sample of the data
+            st.write("**Sample of filtered data (first 10 rows):**")
+            st.dataframe(df_filtered.head(10))
 
-        # --- Create Triangle ---
+        # --- Create Triangle (ORIGINAL WORKING METHOD) ---
         try:
             triangle = cl.Triangle(
                 data=df_filtered,
@@ -493,50 +437,58 @@ if uploaded_file is not None:
                 index='Product',
                 cumulative=False
             )
-            st.markdown("""
-            <div class="success-container">
-                <h3>Triangle Created Successfully</h3>
-                <p>Triangle shape: {triangle.shape}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success("Triangle created successfully!")
+            
         except Exception as e:
-            st.markdown(f"""
+            st.error(f"Error creating triangle: {str(e)}")
+            
+            # Provide more detailed debugging information
+            st.markdown("""
             <div class="error-container">
-                <h3>Triangle Creation Error</h3>
+                <h3>❌ Triangle Creation Failed</h3>
                 <p><strong>Error Type:</strong> {type(e).__name__}</p>
                 <p><strong>Error Message:</strong> {str(e)}</p>
-                <p><strong>Possible causes:</strong></p>
+                <p><strong>Possible causes and solutions:</strong></p>
                 <ul>
-                    <li>Insufficient data for triangle formation</li>
-                    <li>Date columns have unexpected formats</li>
-                    <li>Missing development periods</li>
+                    <li><strong>Insufficient data:</strong> The filtered period may have too few claims to form a valid triangle. Try expanding your date range.</li>
+                    <li><strong>Missing development periods:</strong> Ensure you have claims with different Report_Date values after the Loss_Date.</li>
+                    <li><strong>Data quality issues:</strong> Check that Report_Date is always after Loss_Date.</li>
+                    <li><strong>Single product only:</strong> The triangle needs at least 2 development periods to run Chain Ladder.</li>
+                </ul>
+                <p><strong>Debugging tips:</strong></p>
+                <ul>
+                    <li>Check the "View Data Summary" expander above to see your data structure.</li>
+                    <li>Verify that Report_Date > Loss_Date for all rows.</li>
+                    <li>Ensure you have multiple development periods (different Report_Date values).</li>
                 </ul>
             </div>
-            """, unsafe_allow_html=True)
+            """.format(type=type(e), str=str(e)), unsafe_allow_html=True)
+            
+            # Check specific conditions
+            st.write("**Data Quality Checks:**")
+            
+            # Check if Report_Date is after Loss_Date
+            invalid_dates = df_filtered[df_filtered['Report_Date'] <= df_filtered['Loss_Date']]
+            if not invalid_dates.empty:
+                st.warning(f"⚠️ Found {len(invalid_dates)} rows where Report_Date is not after Loss_Date")
+                st.dataframe(invalid_dates[['Loss_Date', 'Report_Date']].head())
+            
+            # Check number of unique development periods per product
+            for product in df_filtered['Product'].unique():
+                product_data = df_filtered[df_filtered['Product'] == product]
+                dev_periods = (product_data['Report_Date'].dt.year - product_data['Loss_Date'].dt.year).nunique()
+                st.write(f"Product '{product}': {dev_periods} unique development periods")
+                if dev_periods < 2:
+                    st.warning(f"⚠️ Product '{product}' has only {dev_periods} development period(s). Need at least 2 for Chain Ladder.")
+            
             st.stop()
 
         # --- Fit Chain Ladder model ---
         try:
             model = cl.Chainladder().fit(triangle)
-            st.markdown("""
-            <div class="success-container">
-                <h3>Chain Ladder Model Fitted Successfully</h3>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success("Chain Ladder model fitted successfully!")
         except Exception as e:
-            st.markdown(f"""
-            <div class="error-container">
-                <h3>Model Fitting Error</h3>
-                <p><strong>Error Type:</strong> {type(e).__name__}</p>
-                <p><strong>Error Message:</strong> {str(e)}</p>
-                <p><strong>Possible causes:</strong></p>
-                <ul>
-                    <li>Triangle has insufficient development periods</li>
-                    <li>Negative or zero values in the triangle</li>
-                    <li>Missing data in the triangle</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            st.error(f"Error fitting Chain Ladder model: {e}")
             st.stop()
 
         # Extract IBNR and Ultimate
@@ -553,12 +505,10 @@ if uploaded_file is not None:
         ibnr_summary = ibnr_reset.groupby('Product')[selected_columns].sum().reset_index()
         ultimate_summary = ultimate_reset.groupby('Product')[selected_columns].sum().reset_index()
 
-        # Display results
-        st.markdown(f"""
-        <div class="card">
-            <h3>IBNR Results for Period: {from_date.date()} to {to_date.date()}</h3>
-        </div>
-        """, unsafe_allow_html=True)
+        # Display results with period label
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -606,22 +556,8 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.markdown(f"""
-        <div class="error-container">
-            <h3>Unexpected Error</h3>
-            <p><strong>Error Type:</strong> {type(e).__name__}</p>
-            <p><strong>Error Message:</strong> {str(e)}</p>
-            <p><strong>Traceback:</strong></p>
-            <pre>{traceback.format_exc()}</pre>
-            <p><strong>Please check:</strong></p>
-            <ul>
-                <li>Your file format and column selections</li>
-                <li>That all required columns are properly mapped</li>
-                <li>That date columns contain valid dates</li>
-                <li>That numeric columns contain numbers</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        st.error(f"An unexpected error occurred: {e}")
+        st.write("Please check your file format and column selections.")
 
 st.markdown('</div>', unsafe_allow_html=True)  # close main-container
 
