@@ -267,7 +267,7 @@ st.markdown("""
 st.markdown("""
 <div class="hero">
     <h1>Chain Ladder IBNR Calculator</h1>
-    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period, choose grain (Yearly/Quarterly/Monthly), and select value columns. The app computes IBNR, Ultimate claims, LDFs, and completed triangles.</p>
+    <p>Upload the claims data (CSV or Excel). Map the columns, select the IBNR period, choose grain (Yearly/Quarterly/Monthly), and select value columns. The app computes IBNR, Ultimate claims, LDFs, and completed triangles.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -284,7 +284,7 @@ with col2:
 # --- IBNR Period Selection ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>📅 IBNR Period</h3>
+    <h3>IBNR Period</h3>
     <p>Select the date range for claims to be included in the IBNR calculation (based on Loss Date)</p>
 </div>
 """, unsafe_allow_html=True)
@@ -305,7 +305,7 @@ st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 # --- Grain Selection ---
 st.markdown("""
 <div class="grain-container">
-    <h3>📊 Triangle Grain</h3>
+    <h3> Triangle Grain</h3>
     <p>Select the time unit for grouping origin and development periods</p>
 </div>
 """, unsafe_allow_html=True)
@@ -385,7 +385,7 @@ if uploaded_file is not None:
         # --- Index Columns Selection (Multiple) ---
         st.markdown("""
         <div class="grouping-container">
-            <h3>📊 Index Columns (Grouping)</h3>
+            <h3>Index Columns (Grouping)</h3>
             <p>Select the columns you want to group by (e.g., Line_of_Business, Region). Results will be aggregated by these columns.</p>
         </div>
         """, unsafe_allow_html=True)
@@ -463,7 +463,6 @@ if uploaded_file is not None:
         missing_summary = {}
         missing_in_selected = False
         
-        # Check original dataframe columns
         for col in all_selected_cols:
             if col in df.columns:
                 missing_count = df[col].isna().sum()
@@ -506,7 +505,7 @@ if uploaded_file is not None:
             st.success("✅ No duplicate rows found.")
         
         # -----------------------------------------------------------------
-        # 3. DATE REASONABILITY CHECK
+        # 3. DATE REASONABILITY CHECK (Report_Date >= Loss_Date)
         # -----------------------------------------------------------------
         st.markdown("#### 3. Date Reasonability Check")
         
@@ -515,14 +514,15 @@ if uploaded_file is not None:
         df_date_check['temp_loss_date'] = pd.to_datetime(df_date_check[loss_date_col], errors='coerce')
         df_date_check['temp_report_date'] = pd.to_datetime(df_date_check[report_date_col], errors='coerce')
         
-        invalid_dates = df_date_check[df_date_check['temp_report_date'] <= df_date_check['temp_loss_date']]
+        # Report_Date must be >= Loss_Date (can be equal, but not before)
+        invalid_dates = df_date_check[df_date_check['temp_report_date'] < df_date_check['temp_loss_date']]
         invalid_count = len(invalid_dates)
         
         if invalid_count > 0:
             st.markdown("""
             <div class="data-check-error">
                 <b>❌ CRITICAL ERROR: Invalid dates found.</b><br>
-                Report_Date must be after Loss_Date for all rows.
+                Report_Date cannot be before Loss_Date. Report_Date can be equal to or after Loss_Date.
             </div>
             """, unsafe_allow_html=True)
             
@@ -531,7 +531,7 @@ if uploaded_file is not None:
             
             st.stop()
         else:
-            st.success("✅ All dates are valid (Report_Date after Loss_Date).")
+            st.success("✅ All dates are valid (Report_Date is on or after Loss_Date).")
         
         # -----------------------------------------------------------------
         # 4. NON-NUMERIC VALUES CHECK (CONVERT AUTOMATICALLY)
@@ -549,7 +549,7 @@ if uploaded_file is not None:
                     conversion_issues.append(f"Column '{col}': {failed_count} non-numeric values (e.g., {problematic_values})")
         
         if conversion_issues:
-            st.info("ℹ️ Converting non-numeric values to numbers:")
+            st.info(" Converting non-numeric values to numbers:")
             for issue in conversion_issues:
                 st.write(f"  • {issue}")
             for col in selected_value_cols:
@@ -567,7 +567,7 @@ if uploaded_file is not None:
         rows_removed = df_original_len - len(df)
         if rows_removed > 0 or conversion_issues:
             st.markdown('<div class="data-check-warning">', unsafe_allow_html=True)
-            st.markdown("**⚠️ Data adjustments applied:**")
+            st.markdown("** Data adjustments applied:**")
             if rows_removed > 0:
                 st.write(f"• Removed {rows_removed} duplicate row(s)")
             if conversion_issues:
@@ -665,8 +665,6 @@ if uploaded_file is not None:
         
         # Incremental triangle (convert cumulative to incremental)
         incremental_triangle = completed_triangle.copy()
-        # Convert to incremental by subtracting previous development period
-        # This is handled by chainladder's built-in method
         if hasattr(completed_triangle, 'incr_to_incremental'):
             incremental_triangle = completed_triangle.incr_to_incremental()
         
