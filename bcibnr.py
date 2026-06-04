@@ -12,7 +12,6 @@ st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 # ---------- CUSTOM CSS (African Actuarial Consultants theme) ----------
 st.markdown("""
 <style>
-    /* Global */
     .stApp {
         background-color: #FFFFFF;
         color: #000000;
@@ -20,16 +19,14 @@ st.markdown("""
         font-size: 11pt;
     }
     
-    /* Apply Calisto MT to all text elements */
     body, p, h1, h2, h3, h4, h5, h6, div, span, label, .stMarkdown, 
     .stTextInput label, .stDateInput label, .stSelectbox label, .stMultiSelect label,
     .stButton button, .stDownloadButton button, .stFileUploader label,
     .stAlert, .stInfo, .stWarning, .stError, .stSuccess, .stSpinner, 
-    .stProgress, .stToast, .stSidebar, .stMetric, .stExpander {
+    .stProgress, .stToast, .stSidebar, .stMetric {
         font-family: 'Calisto MT', serif !important;
     }
     
-    /* Header / Navigation */
     .header {
         background-color: #000000;
         padding: 1rem 2rem;
@@ -44,13 +41,11 @@ st.markdown("""
         text-decoration: none;
         font-weight: 500;
         transition: color 0.3s;
-        font-family: 'Calisto MT', serif;
     }
     .nav-links a:hover {
         color: #D4AF37;
     }
     
-    /* Hero Section */
     .hero {
         background: linear-gradient(135deg, #000000 0%, #333333 100%);
         color: #FFFFFF;
@@ -62,30 +57,26 @@ st.markdown("""
         color: #D4AF37;
         font-size: 2.5rem;
         margin-bottom: 0.5rem;
-        font-family: 'Calisto MT', serif;
     }
     .hero p {
         font-size: 1.2rem;
         max-width: 800px;
         margin: 0 auto;
-        font-family: 'Calisto MT', serif;
     }
     
-    /* Main container */
     .main-container {
         max-width: 1400px;
         margin: 2rem auto;
         padding: 0 2rem;
     }
     
-    /* Required Column Containers */
     .required-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
         border-radius: 10px;
         padding: 1rem;
         text-align: center;
-        min-height: 120px;
+        min-height: 100px;
         height: auto;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         width: 100%;
@@ -95,17 +86,16 @@ st.markdown("""
         color: #D4AF37;
         margin-top: 0;
         margin-bottom: 0.5rem;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         font-weight: bold;
     }
     .required-container p {
         color: #666666;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         margin-bottom: 0;
         line-height: 1.3;
     }
     
-    /* Grouping Container */
     .grouping-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -117,11 +107,10 @@ st.markdown("""
         color: #D4AF37;
         margin-top: 0;
         margin-bottom: 0.5rem;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         font-weight: bold;
     }
     
-    /* Date Range Container */
     .date-range-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -134,11 +123,10 @@ st.markdown("""
         color: #D4AF37;
         margin-top: 0;
         margin-bottom: 0.5rem;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         font-weight: bold;
     }
     
-    /* Grain Container */
     .grain-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -151,11 +139,10 @@ st.markdown("""
         color: #D4AF37;
         margin-top: 0;
         margin-bottom: 0.5rem;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         font-weight: bold;
     }
     
-    /* Cards */
     .card {
         background-color: #F9F9F9;
         border: 1px solid #D4AF37;
@@ -169,10 +156,8 @@ st.markdown("""
         margin-top: 0;
         border-bottom: 2px solid #D4AF37;
         padding-bottom: 0.5rem;
-        font-family: 'Calisto MT', serif;
     }
     
-    /* Footer */
     .footer {
         background-color: #000000;
         color: #FFFFFF;
@@ -184,10 +169,8 @@ st.markdown("""
     .footer a {
         color: #D4AF37;
         text-decoration: none;
-        font-family: 'Calisto MT', serif;
     }
     
-    /* Streamlit element overrides */
     .stButton > button, .stDownloadButton > button {
         background-color: #D4AF37;
         color: #000000;
@@ -196,7 +179,6 @@ st.markdown("""
         font-weight: bold;
         padding: 0.5rem 1rem;
         transition: all 0.3s;
-        font-family: 'Calisto MT', serif !important;
     }
     .stButton > button:hover, .stDownloadButton > button:hover {
         background-color: #B8960F;
@@ -221,7 +203,6 @@ st.markdown("""
         overflow: hidden;
     }
     
-    /* Data Check Containers */
     .data-check-container {
         background-color: #E3F2FD;
         border: 2px solid #2196F3;
@@ -244,7 +225,6 @@ st.markdown("""
         margin-bottom: 1rem;
     }
     
-    /* Fix for select box container */
     .stSelectbox div[data-baseweb="select"] {
         width: 100%;
     }
@@ -267,53 +247,49 @@ st.markdown("""
 st.markdown("""
 <div class="hero">
     <h1>Chain Ladder IBNR Calculator</h1>
-    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period, choose grain, and select value columns. The app computes IBNR, Ultimate claims, LDFs, and completed triangles.</p>
+    <p>Upload your claims data. Map your columns, select period, grain, and value columns.</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ---------- Main Container ----------
 st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
-# --- User inputs ---
 col1, col2 = st.columns(2)
 with col1:
     client_name = st.text_input("Client Name (for file name)", value="Client").strip()
 with col2:
     pass
 
-# --- IBNR Period Selection ---
+# --- IBNR Period ---
 st.markdown("""
 <div class="date-range-container">
-    <h3>IBNR Period</h3>
-    <p>Select the date range for claims to be included in the IBNR calculation (based on Loss Date)</p>
+    <h3>📅 IBNR Period</h3>
+    <p>Select date range based on Loss Date</p>
 </div>
 """, unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
-    from_date = st.date_input("From Date (Start of IBNR Period)", value=date(2020, 1, 1))
-    st.caption("Claims with Loss Date on or after this date")
+    from_date = st.date_input("From Date", value=date(2020, 1, 1))
 with col2:
-    to_date = st.date_input("To Date (End of IBNR Period)", value=date(2024, 12, 31))
-    st.caption("Claims with Loss Date on or before this date")
+    to_date = st.date_input("To Date", value=date(2024, 12, 31))
 
 from_date = pd.to_datetime(from_date)
 to_date = pd.to_datetime(to_date)
 
 st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 
-# --- Grain Selection ---
+# --- Grain ---
 st.markdown("""
 <div class="grain-container">
-    <h3>Triangle Grain</h3>
-    <p>Select the time unit for grouping origin and development periods</p>
+    <h3>📊 Triangle Grain</h3>
+    <p>Select time unit for grouping periods</p>
 </div>
 """, unsafe_allow_html=True)
 
-grain_options = {'Yearly': 'Y', 'Quarterly': 'Q', 'Monthly': 'M'}
-selected_grain_label = st.selectbox("Select Grain:", options=list(grain_options.keys()), index=0)
-selected_grain = grain_options[selected_grain_label]
-st.caption(f"Selected grain: {selected_grain_label} ({selected_grain})")
+grain_map = {'Yearly': 'Y', 'Quarterly': 'Q', 'Monthly': 'M'}
+grain_label = st.selectbox("Select Grain:", options=list(grain_map.keys()), index=0)
+grain = grain_map[grain_label]
 
 # File uploader
 uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
@@ -323,295 +299,213 @@ if uploaded_file is not None:
         original_filename = uploaded_file.name
         base_filename = re.sub(r'\.[^.]*$', '', original_filename)
 
-        # Read file based on extension
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_extension == 'csv':
+        ext = uploaded_file.name.split('.')[-1].lower()
+        if ext == 'csv':
             try:
                 df = pd.read_csv(uploaded_file, encoding='utf-8')
-            except UnicodeDecodeError:
+            except:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, encoding='cp1252')
-                st.info("File read with Windows-1252 encoding.")
         else:
             df = pd.read_excel(uploaded_file)
 
-        # Drop unnamed columns
-        unnamed = [c for c in df.columns if c.startswith('Unnamed:')]
-        if unnamed:
-            df = df.drop(columns=unnamed)
-            st.info(f"Dropped {len(unnamed)} unnamed column(s).")
+        df = df.drop(columns=[c for c in df.columns if c.startswith('Unnamed:')])
 
-        # Preview
-        st.markdown("#### Preview of uploaded data")
+        st.markdown("#### Preview")
         st.dataframe(df.head())
         st.markdown("---")
 
-        # --- Column Mapping Section ---
-        st.markdown("### Map Your Columns to Required Fields")
-        st.markdown("The calculator requires the following columns. For each required column, select the corresponding column from your uploaded data:")
+        # --- COLUMN MAPPING ---
+        st.markdown("### Map Your Columns")
+        all_cols = df.columns.tolist()
 
-        all_columns = df.columns.tolist()
-        
-        # Display available columns for debugging
-        with st.expander("View available column names in your file"):
-            st.write(all_columns)
-
-        # Loss Date column
         st.markdown("""
         <div class="required-container">
             <h3>Loss_Date</h3>
-            <p>The date when the loss occurred (origin period)</p>
+            <p>Date when loss occurred</p>
         </div>
         """, unsafe_allow_html=True)
-        loss_col = st.selectbox("Select your Loss Date column", options=[""] + all_columns, key="loss_date", label_visibility="collapsed")
+        loss_col = st.selectbox("Loss Date column", options=[""] + all_cols, label_visibility="collapsed")
         if not loss_col:
-            st.error("Please select a Loss Date column.")
             st.stop()
-        
-        # Report Date column
+
         st.markdown("""
         <div class="required-container">
             <h3>Report_Date</h3>
-            <p>The date when the claim was reported (development period)</p>
+            <p>Date when claim was reported</p>
         </div>
         """, unsafe_allow_html=True)
-        report_col = st.selectbox("Select your Report Date column", options=[""] + all_columns, key="report_date", label_visibility="collapsed")
+        report_col = st.selectbox("Report Date column", options=[""] + all_cols, label_visibility="collapsed")
         if not report_col:
-            st.error("Please select a Report Date column.")
             st.stop()
 
         st.markdown("---")
-        
-        # Index Columns Selection
+
         st.markdown("""
         <div class="grouping-container">
-            <h3>Index Columns (Grouping)</h3>
-            <p>Select the columns you want to group by (e.g., Line_of_Business, Region). Results will be aggregated by these columns.</p>
+            <h3>📊 Grouping Columns</h3>
+            <p>Select columns to group by (e.g., Line_of_Business)</p>
         </div>
         """, unsafe_allow_html=True)
         
-        grouping_options = [col for col in all_columns if col not in [loss_col, report_col]]
-        index_cols = st.multiselect(
-            "Choose columns to group by (at least one required):",
-            options=grouping_options,
-            default=[],
-            help="Select one or more columns. The IBNR results will be aggregated by these columns."
-        )
-        
+        group_options = [c for c in all_cols if c not in [loss_col, report_col]]
+        index_cols = st.multiselect("Group by:", options=group_options)
         if not index_cols:
-            st.error("Please select at least one index (grouping) column.")
+            st.error("Select at least one grouping column.")
             st.stop()
 
         st.markdown("---")
-
-        # Numeric columns selection
         st.markdown("### Select Numeric Columns (Claim Amounts)")
-        st.markdown("Select which numeric columns contain claim amounts to run Chain Ladder on:")
-        
-        numeric_options = [col for col in all_columns if col not in [loss_col, report_col] + index_cols]
-        
-        if not numeric_options:
-            st.error("No numeric columns available. Please check your data.")
-            st.stop()
-        
-        value_cols = st.multiselect(
-            "Choose the numeric columns (claim amounts) to analyze:",
-            options=numeric_options,
-            default=[]
-        )
-
+        num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
+        value_cols = st.multiselect("Numeric columns:", options=num_options)
         if not value_cols:
-            st.warning("Please select at least one numeric column.")
+            st.error("Select at least one numeric column.")
             st.stop()
 
-        # ============================================================
-        # STEP 1: FILTER BY DATE RANGE FIRST
-        # ============================================================
-        st.markdown("### Data Processing")
-        
-        # Convert dates using the selected column names
+        # --- PROCESS ---
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
         
-        # Filter by the selected IBNR period
-        df_filtered = df[
-            (df[loss_col] >= from_date) & 
-            (df[loss_col] <= to_date)
-        ].copy()
+        df_filtered = df[(df[loss_col] >= from_date) & (df[loss_col] <= to_date)].copy()
         
         if df_filtered.empty:
-            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
+            st.error("No data for selected period.")
             st.stop()
         
-        st.success(f"Filtered to {len(df_filtered)} claims for the period {from_date.date()} to {to_date.date()}")
-        
-        # ============================================================
-        # STEP 2: DATA QUALITY CHECKS ON FILTERED DATA
-        # ============================================================
+        st.success(f"✅ Filtered: {len(df_filtered)} claims")
+
+        # Data checks
         st.markdown("### Data Quality Checks")
         
-        errors_found = False
+        missing = [c for c in [loss_col, report_col] + index_cols + value_cols if df_filtered[c].isna().sum() > 0]
+        if missing:
+            st.markdown(f'<div class="data-check-error">❌ Missing values in: {", ".join(missing)}</div>', unsafe_allow_html=True)
+            st.stop()
         
-        # 1. Missing Values Check
-        st.markdown("#### 1. Missing Values Check")
-        missing_cols = []
-        for col in [loss_col, report_col] + index_cols + value_cols:
-            missing_count = df_filtered[col].isna().sum()
-            if missing_count > 0:
-                missing_cols.append(f"{col} ({missing_count} missing)")
-                errors_found = True
+        invalid = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
+        if len(invalid) > 0:
+            st.markdown(f'<div class="data-check-error">❌ {len(invalid)} rows with Report Date before Loss Date</div>', unsafe_allow_html=True)
+            st.stop()
         
-        if missing_cols:
-            st.markdown(f"""
-            <div class="data-check-error">
-                <b>Missing values found in:</b> {', '.join(missing_cols)}<br>
-                Please fix missing values and re-upload.
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="data-check-container">No missing values found.</div>', unsafe_allow_html=True)
-        
-        # 2. Date Reasonability Check
-        st.markdown("#### 2. Date Reasonability Check")
-        invalid_dates = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
-        if len(invalid_dates) > 0:
-            errors_found = True
-            st.markdown(f"""
-            <div class="data-check-error">
-                <b>Found {len(invalid_dates)} rows where Report Date is before Loss Date.</b><br>
-                Please fix these dates and re-upload.
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="data-check-container">All dates valid (Report Date >= Loss Date).</div>', unsafe_allow_html=True)
-        
-        # 3. Duplicate Rows Check
-        st.markdown("#### 3. Duplicate Rows Check")
-        duplicate_count = df_filtered.duplicated().sum()
-        if duplicate_count > 0:
+        dup = df_filtered.duplicated().sum()
+        if dup > 0:
             df_filtered = df_filtered.drop_duplicates()
-            st.markdown(f"""
-            <div class="data-check-warning">
-                <b>Removed {duplicate_count} duplicate rows.</b><br>
-                {len(df_filtered)} rows remaining.
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="data-check-container">No duplicate rows found.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="data-check-warning">⚠️ Removed {dup} duplicates</div>', unsafe_allow_html=True)
         
-        # 4. Numeric Values Check
-        st.markdown("#### 4. Numeric Values Check")
         def clean_numeric(series):
             if series.dtype == 'object':
                 cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
                 cleaned = cleaned.str.replace(r',', '', regex=False)
                 cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
-                cleaned = cleaned.str.strip()
-                cleaned = cleaned.replace('', np.nan)
+                cleaned = cleaned.str.strip().replace('', np.nan)
                 return pd.to_numeric(cleaned, errors='coerce')
-            else:
-                return pd.to_numeric(series, errors='coerce')
+            return pd.to_numeric(series, errors='coerce')
         
         for col in value_cols:
             df_filtered[col] = clean_numeric(df_filtered[col]).fillna(0)
         
-        st.markdown('<div class="data-check-container">Numeric values cleaned and converted.</div>', unsafe_allow_html=True)
-        
-        # Stop if critical errors found
-        if errors_found:
-            st.stop()
-        
+        st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
-        
-        # ============================================================
-        # STEP 3: CREATE TRIANGLE AND RUN CHAIN LADDER
-        # ============================================================
-        st.markdown("### Running Chain Ladder Calculation")
-        
-        # Prepare data for triangle
-        triangle_df = df_filtered[[loss_col, report_col] + index_cols + value_cols].copy()
-        
-        # Create triangle
-        with st.spinner("Creating triangle..."):
-            try:
-                triangle = cl.Triangle(
-                    data=triangle_df,
-                    origin=loss_col,
-                    development=report_col,
-                    columns=value_cols,
-                    index=index_cols,
-                    cumulative=False,
-                    grain=selected_grain
-                )
-                st.success(f"Triangle created successfully! Grain: {selected_grain_label}")
-            except Exception as e:
-                st.error(f"Triangle creation error: {str(e)}")
-                st.stop()
-        
-        # Fit Chain Ladder model
-        with st.spinner("Fitting Chain Ladder model..."):
-            try:
-                model = cl.Chainladder().fit(triangle)
-                st.success("Chain Ladder model fitted successfully!")
-            except Exception as e:
-                st.error(f"Model fitting error: {str(e)}")
-                st.stop()
-        
-        # ============================================================
-        # STEP 4: EXTRACT AND DISPLAY RESULTS
-        # ============================================================
-        
-        # Extract results
+
+        # --- FIXED: PROPERLY EXTRACT CHAINLADDER RESULTS ---
+        with st.spinner("Running Chain Ladder..."):
+            triangle = cl.Triangle(
+                data=df_filtered,
+                origin=loss_col,
+                development=report_col,
+                columns=value_cols,
+                index=index_cols,
+                cumulative=False,
+                grain=grain
+            )
+            model = cl.Chainladder().fit(triangle)
+            st.success("✅ Model fitted successfully!")
+
+        # --- FIXED RESULTS PROCESSING ---
+        # Chainladder returns results with 'value' column, not original column names
         ibnr = model.ibnr_.to_frame().reset_index()
         ultimate = model.ultimate_.to_frame().reset_index()
         ldfs = model.ldf_.to_frame()
-        completed_triangle = model.full_triangle_.to_frame()
+        completed = model.full_triangle_.to_frame()
+
+        # Display column structure for debugging (optional, remove after testing)
+        with st.expander("Debug: View IBNR column structure"):
+            st.write("IBNR columns:", ibnr.columns.tolist())
+            st.write("Ultimate columns:", ultimate.columns.tolist())
+
+        # The value column contains the actual IBNR amounts
+        # We need to pivot or group appropriately
         
-        # Aggregate by index columns
-        ibnr_summary = ibnr.groupby(index_cols)[value_cols].sum().reset_index()
-        ultimate_summary = ultimate.groupby(index_cols)[value_cols].sum().reset_index()
+        # For IBNR and Ultimate, the DataFrame has columns: index_cols + ['origin', 'development', 'value']
+        # We want to sum by index_cols across all origins and developments
         
+        if len(value_cols) == 1:
+            # Single value column - simpler
+            ibnr_summary = ibnr.groupby(index_cols)['value'].sum().reset_index()
+            ibnr_summary.rename(columns={'value': value_cols[0]}, inplace=True)
+            
+            ultimate_summary = ultimate.groupby(index_cols)['value'].sum().reset_index()
+            ultimate_summary.rename(columns={'value': value_cols[0]}, inplace=True)
+        else:
+            # Multiple value columns - need to handle the structure
+            # The 'columns' dimension becomes a level in the index or separate column
+            # Let's inspect and handle dynamically
+            if 'columns' in ibnr.columns:
+                # Pivot the data
+                ibnr_summary = ibnr.pivot_table(
+                    index=index_cols, 
+                    columns='columns', 
+                    values='value', 
+                    aggfunc='sum'
+                ).reset_index()
+                ibnr_summary.columns.name = None
+                
+                ultimate_summary = ultimate.pivot_table(
+                    index=index_cols, 
+                    columns='columns', 
+                    values='value', 
+                    aggfunc='sum'
+                ).reset_index()
+                ultimate_summary.columns.name = None
+            else:
+                # Fallback: sum all values
+                ibnr_summary = ibnr.groupby(index_cols)['value'].sum().reset_index()
+                ibnr_summary.rename(columns={'value': 'Total_IBNR'}, inplace=True)
+                
+                ultimate_summary = ultimate.groupby(index_cols)['value'].sum().reset_index()
+                ultimate_summary.rename(columns={'value': 'Total_Ultimate'}, inplace=True)
+
         # Display results
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {selected_grain_label} | **Grouped by:** {', '.join(index_cols)}")
+        st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
+        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR by " + ", ".join(index_cols))
-            display_ibnr = ibnr_summary.copy()
-            for col in value_cols:
-                display_ibnr[col] = display_ibnr[col].apply(lambda x: f"{x:,.2f}")
-            st.dataframe(display_ibnr, use_container_width=True)
+            st.subheader("IBNR Summary")
+            st.dataframe(ibnr_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        with col2:
+        with c2:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("Ultimate Claims by " + ", ".join(index_cols))
-            display_ultimate = ultimate_summary.copy()
-            for col in value_cols:
-                display_ultimate[col] = display_ultimate[col].apply(lambda x: f"{x:,.2f}")
-            st.dataframe(display_ultimate, use_container_width=True)
+            st.subheader("Ultimate Claims")
+            st.dataframe(ultimate_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display LDFs
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Loss Development Factors (LDFs)")
+        st.subheader("Loss Development Factors")
         st.dataframe(ldfs, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # ============================================================
-        # STEP 5: EXPORT TO EXCEL
-        # ============================================================
+
+        # Export
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             ultimate_summary.to_excel(writer, index=False, sheet_name='Ultimate_Summary')
             ldfs.to_excel(writer, sheet_name='LDFs')
-            completed_triangle.to_excel(writer, sheet_name='Completed_Triangle')
+            completed.to_excel(writer, sheet_name='Completed_Triangle')
         
         output.seek(0)
         
@@ -619,24 +513,16 @@ if uploaded_file is not None:
         safe_original = re.sub(r'[\\/*?:"<>|]', "", base_filename).strip() or "Data"
         file_name = f"{safe_client}_{safe_original}_IBNR_Results_{from_date.year}_{to_date.year}.xlsx"
         
-        st.markdown("### Download Results")
-        st.download_button(
-            label="📥 Download Excel Report (IBNR, Ultimate, LDFs, Triangles)",
-            data=output,
-            file_name=file_name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.download_button("📥 Download Excel Report", data=output, file_name=file_name)
         
     except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
-        st.write("Please check your file format and column selections.")
+        st.error(f"Error: {str(e)}")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- Footer ----------
 st.markdown("""
 <div class="footer">
-    <p>© 2026 African Actuarial Consultants. All rights reserved. | <a href="#">Privacy</a> | <a href="#">Terms</a></p>
-    <p style="margin-top: 0.5rem; font-size: 0.9rem;">Powered by Vanababa</p>
+    <p>© 2026 African Actuarial Consultants. All rights reserved.</p>
 </div>
 """, unsafe_allow_html=True)
