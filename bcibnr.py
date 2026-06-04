@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+Chain Ladder IBNR Calculator
+Version: 2.0
+Robust version with comprehensive validation and error handling
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,18 +12,19 @@ import chainladder as cl
 from io import BytesIO
 from datetime import date
 import re
+import logging
+from typing import List, Tuple, Optional
+
+# Configure logging for debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
-# ---------- CUSTOM CSS (same as before, omitted for brevity - add your CSS here) ----------
+# ---------- CUSTOM CSS (African Actuarial Consultants theme) ----------
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #FFFFFF;
-        color: #000000;
-        font-family: 'Calisto MT', serif;
-        font-size: 11pt;
-    }
+    .stApp { background-color: #FFFFFF; color: #000000; font-family: 'Calisto MT', serif; font-size: 11pt; }
     body, p, h1, h2, h3, h4, h5, h6, div, span, label, .stMarkdown, 
     .stTextInput label, .stDateInput label, .stSelectbox label, .stMultiSelect label,
     .stButton button, .stDownloadButton button, .stFileUploader label,
@@ -40,9 +47,7 @@ st.markdown("""
         font-weight: 500;
         transition: color 0.3s;
     }
-    .nav-links a:hover {
-        color: #D4AF37;
-    }
+    .nav-links a:hover { color: #D4AF37; }
     .hero {
         background: linear-gradient(135deg, #000000 0%, #333333 100%);
         color: #FFFFFF;
@@ -50,89 +55,28 @@ st.markdown("""
         text-align: center;
         border-bottom: 3px solid #D4AF37;
     }
-    .hero h1 {
-        color: #D4AF37;
-        font-size: 2.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .hero p {
-        font-size: 1.2rem;
-        max-width: 800px;
-        margin: 0 auto;
-    }
-    .main-container {
-        max-width: 1400px;
-        margin: 2rem auto;
-        padding: 0 2rem;
-    }
-    .required-container {
+    .hero h1 { color: #D4AF37; font-size: 2.5rem; margin-bottom: 0.5rem; }
+    .hero p { font-size: 1.2rem; max-width: 800px; margin: 0 auto; }
+    .main-container { max-width: 1400px; margin: 2rem auto; padding: 0 2rem; }
+    .required-container, .grouping-container, .date-range-container, .grain-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
         border-radius: 10px;
         padding: 1rem;
         text-align: center;
-        min-height: 100px;
-        height: auto;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        width: 100%;
         margin-bottom: 1rem;
     }
-    .required-container h3 {
+    .required-container h3, .grouping-container h3, .date-range-container h3, .grain-container h3 {
         color: #D4AF37;
         margin-top: 0;
         margin-bottom: 0.5rem;
         font-size: 1.1rem;
         font-weight: bold;
     }
-    .required-container p {
+    .required-container p, .grouping-container p, .date-range-container p, .grain-container p {
         color: #666666;
         font-size: 0.8rem;
         margin-bottom: 0;
-        line-height: 1.3;
-    }
-    .grouping-container {
-        background-color: #F9F9F9;
-        border: 2px solid #D4AF37;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .grouping-container h3 {
-        color: #D4AF37;
-        margin-top: 0;
-        margin-bottom: 0.5rem;
-        font-size: 1.1rem;
-        font-weight: bold;
-    }
-    .date-range-container {
-        background-color: #F9F9F9;
-        border: 2px solid #D4AF37;
-        border-radius: 10px;
-        padding: 1rem;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .date-range-container h3 {
-        color: #D4AF37;
-        margin-top: 0;
-        margin-bottom: 0.5rem;
-        font-size: 1.1rem;
-        font-weight: bold;
-    }
-    .grain-container {
-        background-color: #F9F9F9;
-        border: 2px solid #D4AF37;
-        border-radius: 10px;
-        padding: 1rem;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .grain-container h3 {
-        color: #D4AF37;
-        margin-top: 0;
-        margin-bottom: 0.5rem;
-        font-size: 1.1rem;
-        font-weight: bold;
     }
     .card {
         background-color: #F9F9F9;
@@ -142,12 +86,7 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         margin-bottom: 2rem;
     }
-    .card h3 {
-        color: #D4AF37;
-        margin-top: 0;
-        border-bottom: 2px solid #D4AF37;
-        padding-bottom: 0.5rem;
-    }
+    .card h3 { color: #D4AF37; border-bottom: 2px solid #D4AF37; padding-bottom: 0.5rem; }
     .footer {
         background-color: #000000;
         color: #FFFFFF;
@@ -156,10 +95,7 @@ st.markdown("""
         border-top: 3px solid #D4AF37;
         margin-top: 3rem;
     }
-    .footer a {
-        color: #D4AF37;
-        text-decoration: none;
-    }
+    .footer a { color: #D4AF37; text-decoration: none; }
     .stButton > button, .stDownloadButton > button {
         background-color: #D4AF37;
         color: #000000;
@@ -173,47 +109,62 @@ st.markdown("""
         background-color: #B8960F;
         color: #FFFFFF;
     }
-    .stFileUploader {
-        border: 2px dashed #D4AF37;
-        border-radius: 5px;
-        padding: 1rem;
-    }
-    .stMultiSelect [data-baseweb="select"], 
-    .stSelectbox [data-baseweb="select"] {
+    .stFileUploader { border: 2px dashed #D4AF37; border-radius: 5px; padding: 1rem; }
+    .stMultiSelect [data-baseweb="select"], .stSelectbox [data-baseweb="select"] {
         border: 1px solid #D4AF37;
         border-radius: 4px;
     }
-    .dataframe {
-        border: 1px solid #D4AF37;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-    .data-check-container {
-        background-color: #E3F2FD;
-        border: 2px solid #2196F3;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .data-check-warning {
-        background-color: #FFF3E0;
-        border: 2px solid #FF9800;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .data-check-error {
-        background-color: #FFEBEE;
-        border: 2px solid #F44336;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .stSelectbox div[data-baseweb="select"] {
-        width: 100%;
-    }
+    .dataframe { border: 1px solid #D4AF37; border-radius: 8px; overflow: hidden; }
+    .data-check-container { background-color: #E3F2FD; border: 2px solid #2196F3; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .data-check-warning { background-color: #FFF3E0; border: 2px solid #FF9800; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .data-check-error { background-color: #FFEBEE; border: 2px solid #F44336; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .stSelectbox div[data-baseweb="select"] { width: 100%; }
 </style>
 """, unsafe_allow_html=True)
+
+# ---------- Helper Functions ----------
+
+def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Standardise column names: strip spaces, replace special characters"""
+    df.columns = df.columns.astype(str).str.strip().str.replace(r'[\n\r\t]', ' ', regex=True)
+    return df
+
+def detect_duplicate_columns(df: pd.DataFrame) -> List[str]:
+    """Identify duplicate column names"""
+    return [col for col in df.columns if df.columns.tolist().count(col) > 1]
+
+def validate_columns_exist(df: pd.DataFrame, required_cols: List[str], context: str) -> Tuple[bool, List[str]]:
+    """Validate that all required columns exist in the dataframe"""
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        logger.warning(f"Missing columns in {context}: {missing}")
+    return len(missing) == 0, missing
+
+def clean_numeric_series(series: pd.Series) -> pd.Series:
+    """Clean numeric values by removing currency symbols and converting parentheses"""
+    if series.dtype == 'object':
+        cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
+        cleaned = cleaned.str.replace(r',', '', regex=False)
+        cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
+        cleaned = cleaned.str.strip().replace('', np.nan)
+        return pd.to_numeric(cleaned, errors='coerce')
+    return pd.to_numeric(series, errors='coerce')
+
+def inspect_chainladder_output(df: pd.DataFrame, name: str, st_container) -> Tuple[pd.DataFrame, str]:
+    """Dynamically inspect Chainladder output to find the value column"""
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    # Debug output (shown in expander only)
+    with st_container.expander(f"Debug: {name} Output Structure"):
+        st_container.write(f"Columns: {df.columns.tolist()}")
+        st_container.write(f"Numeric columns: {numeric_cols}")
+        st_container.write(f"Shape: {df.shape}")
+        st_container.dataframe(df.head())
+    
+    if not numeric_cols:
+        raise ValueError(f"No numeric columns found in {name} output")
+    
+    return df, numeric_cols[0]
 
 # ---------- Header ----------
 st.markdown("""
@@ -238,13 +189,14 @@ st.markdown("""
 # ---------- Main Container ----------
 st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
+# User inputs
 col1, col2 = st.columns(2)
 with col1:
     client_name = st.text_input("Client Name (for file name)", value="Client").strip()
 with col2:
     pass
 
-# --- IBNR Period ---
+# IBNR Period
 st.markdown("""
 <div class="date-range-container">
     <h3>📅 IBNR Period</h3>
@@ -263,7 +215,7 @@ to_date = pd.to_datetime(to_date)
 
 st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 
-# --- Grain ---
+# Grain Selection
 st.markdown("""
 <div class="grain-container">
     <h3>📊 Triangle Grain</h3>
@@ -283,6 +235,7 @@ if uploaded_file is not None:
         original_filename = uploaded_file.name
         base_filename = re.sub(r'\.[^.]*$', '', original_filename)
 
+        # Read file
         ext = uploaded_file.name.split('.')[-1].lower()
         if ext == 'csv':
             try:
@@ -291,9 +244,33 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, encoding='cp1252')
         else:
-            df = pd.read_excel(uploaded_file)
+            # Excel: check for merged headers by reading with header=None first
+            df_raw = pd.read_excel(uploaded_file, header=None)
+            # Check if first row contains "Unnamed" patterns (indicates merged cells)
+            first_row = df_raw.iloc[0].astype(str)
+            if first_row.str.contains('Unnamed', na=False).any():
+                st.warning("⚠️ Detected merged cells or irregular headers in Excel file. Please ensure column names are in a single row.")
+                # Try to use second row as header
+                df = pd.read_excel(uploaded_file, header=1)
+            else:
+                df = pd.read_excel(uploaded_file)
 
-        df = df.drop(columns=[c for c in df.columns if c.startswith('Unnamed:')])
+        # Clean column names
+        df = clean_column_names(df)
+        
+        # Detect duplicate columns
+        duplicates = detect_duplicate_columns(df)
+        if duplicates:
+            st.warning(f"⚠️ Duplicate column names detected: {duplicates}. This may cause unexpected behaviour.")
+        
+        # Drop completely empty columns
+        df = df.dropna(axis=1, how='all')
+        
+        # Remove unnamed columns but warn user
+        unnamed = [c for c in df.columns if c.lower().startswith('unnamed')]
+        if unnamed:
+            st.info(f"Removed {len(unnamed)} unnamed column(s) (likely from merged cells or blank headers).")
+            df = df.drop(columns=unnamed)
 
         st.markdown("#### Preview")
         st.dataframe(df.head())
@@ -346,10 +323,29 @@ if uploaded_file is not None:
             st.error("Select at least one numeric column.")
             st.stop()
 
-        # --- PROCESS ---
+        # --- DATA VALIDATION BEFORE PROCESSING ---
+        all_selected = [loss_col, report_col] + index_cols + value_cols
+        
+        # Validate all selected columns exist
+        valid, missing = validate_columns_exist(df, all_selected, "uploaded data")
+        if not valid:
+            st.error(f"❌ Selected columns not found: {missing}")
+            st.stop()
+        
+        st.success("✅ All selected columns validated")
+
+        # --- PROCESS DATA ---
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
         
+        # Check for date conversion failures
+        loss_na_count = df[loss_col].isna().sum()
+        report_na_count = df[report_col].isna().sum()
+        if loss_na_count > 0 or report_na_count > 0:
+            st.warning(f"⚠️ {loss_na_count} rows could not parse Loss Date, {report_na_count} rows could not parse Report Date.")
+            df = df.dropna(subset=[loss_col, report_col])
+        
+        # Filter by date range
         df_filtered = df[(df[loss_col] >= from_date) & (df[loss_col] <= to_date)].copy()
         
         if df_filtered.empty:
@@ -358,104 +354,117 @@ if uploaded_file is not None:
         
         st.success(f"✅ Filtered: {len(df_filtered)} claims")
 
-        # Data checks
+        # --- DATA QUALITY CHECKS ---
         st.markdown("### Data Quality Checks")
         
-        missing = [c for c in [loss_col, report_col] + index_cols + value_cols if df_filtered[c].isna().sum() > 0]
-        if missing:
-            st.markdown(f'<div class="data-check-error">❌ Missing values in: {", ".join(missing)}</div>', unsafe_allow_html=True)
+        # Check 1: Missing values in selected columns
+        missing_after_filter = []
+        for col in all_selected:
+            cnt = df_filtered[col].isna().sum()
+            if cnt > 0:
+                missing_after_filter.append(f"{col} ({cnt})")
+        
+        if missing_after_filter:
+            st.markdown(f'<div class="data-check-error">❌ Missing values in filtered data: {", ".join(missing_after_filter)}</div>', unsafe_allow_html=True)
             st.stop()
         
-        invalid = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
-        if len(invalid) > 0:
-            st.markdown(f'<div class="data-check-error">❌ {len(invalid)} rows with Report Date before Loss Date</div>', unsafe_allow_html=True)
+        # Check 2: Date reasonability
+        invalid_dates = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
+        if len(invalid_dates) > 0:
+            st.markdown(f'<div class="data-check-error">❌ {len(invalid_dates)} rows with Report Date before Loss Date</div>', unsafe_allow_html=True)
+            with st.expander("View invalid rows"):
+                st.dataframe(invalid_dates[[loss_col, report_col]].head(10))
             st.stop()
         
-        dup = df_filtered.duplicated().sum()
-        if dup > 0:
+        # Check 3: Duplicate rows
+        dup_count = df_filtered.duplicated().sum()
+        if dup_count > 0:
             df_filtered = df_filtered.drop_duplicates()
-            st.markdown(f'<div class="data-check-warning">⚠️ Removed {dup} duplicates</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="data-check-warning">⚠️ Removed {dup_count} duplicate rows</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="data-check-container">✅ No duplicate rows found</div>', unsafe_allow_html=True)
         
-        def clean_numeric(series):
-            if series.dtype == 'object':
-                cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
-                cleaned = cleaned.str.replace(r',', '', regex=False)
-                cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
-                cleaned = cleaned.str.strip().replace('', np.nan)
-                return pd.to_numeric(cleaned, errors='coerce')
-            return pd.to_numeric(series, errors='coerce')
-        
+        # Check 4: Clean numeric values
         for col in value_cols:
-            df_filtered[col] = clean_numeric(df_filtered[col]).fillna(0)
+            original_non_numeric = df_filtered[col].dtype == 'object'
+            df_filtered[col] = clean_numeric_series(df_filtered[col]).fillna(0)
+            if original_non_numeric:
+                st.markdown(f'<div class="data-check-warning">⚠️ Column "{col}" contained non-numeric values (converted to 0)</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
         # --- CREATE TRIANGLE ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
-            triangle = cl.Triangle(
-                data=df_filtered,
-                origin=loss_col,
-                development=report_col,
-                columns=value_cols,
-                index=index_cols,
-                cumulative=False,
-                grain=grain
-            )
-            model = cl.Chainladder().fit(triangle)
-            st.success("✅ Model fitted successfully!")
+            try:
+                triangle = cl.Triangle(
+                    data=df_filtered,
+                    origin=loss_col,
+                    development=report_col,
+                    columns=value_cols,
+                    index=index_cols,
+                    cumulative=False,
+                    grain=grain
+                )
+                
+                # Validate triangle creation
+                if triangle.shape[0] == 0 or triangle.shape[1] == 0:
+                    st.error("Triangle creation resulted in empty dimensions. Please check your data.")
+                    st.stop()
+                
+                model = cl.Chainladder().fit(triangle)
+                st.success("✅ Model fitted successfully!")
+                
+            except Exception as e:
+                st.error(f"Error in triangle/model creation: {str(e)}")
+                st.stop()
 
-        # --- FIXED: PROPERLY EXTRACT AND RESHAPE RESULTS ---
-        # Get the raw IBNR data
+        # --- PROCESS CHAINLADDER OUTPUT ---
+        # Create debug container (collapsible)
+        debug_container = st.container()
+        
+        # Extract IBNR and Ultimate
         ibnr_raw = model.ibnr_
         ultimate_raw = model.ultimate_
         
-        # Convert to DataFrame and reset index
+        # Convert to DataFrame
         ibnr_df = ibnr_raw.to_frame().reset_index()
         ultimate_df = ultimate_raw.to_frame().reset_index()
         
-        # Display debug info
-        st.write("Debug: IBNR DataFrame columns:", ibnr_df.columns.tolist())
-        st.write("Debug: IBNR DataFrame shape:", ibnr_df.shape)
-        st.write("Debug: First few rows:", ibnr_df.head())
+        # Dynamically inspect outputs
+        ibnr_df, ibnr_value_col = inspect_chainladder_output(ibnr_df, "IBNR", debug_container)
+        ultimate_df, ultimate_value_col = inspect_chainladder_output(ultimate_df, "Ultimate", debug_container)
         
-        # The value column name might be different (e.g., 'values', 'ibnr', etc.)
-        # Find the numeric column(s) in the DataFrame
-        numeric_cols_in_ibnr = ibnr_df.select_dtypes(include=[np.number]).columns.tolist()
-        st.write("Debug: Numeric columns in IBNR:", numeric_cols_in_ibnr)
-        
-        if len(numeric_cols_in_ibnr) == 0:
-            st.error("No numeric columns found in IBNR output. Please check the data.")
-            st.stop()
-        
-        # Use the first numeric column as the value column
-        value_column_name = numeric_cols_in_ibnr[0]
-        st.write(f"Debug: Using '{value_column_name}' as the value column")
-        
-        # Sum by index columns
-        if len(index_cols) == 1:
-            ibnr_summary = ibnr_df.groupby(index_cols)[value_column_name].sum().reset_index()
-            ultimate_summary = ultimate_df.groupby(index_cols)[value_column_name].sum().reset_index()
-        else:
-            ibnr_summary = ibnr_df.groupby(index_cols)[value_column_name].sum().reset_index()
-            ultimate_summary = ultimate_df.groupby(index_cols)[value_column_name].sum().reset_index()
-        
-        # Rename the value column to the original column name if single, otherwise keep as is
-        if len(value_cols) == 1:
-            ibnr_summary.rename(columns={value_column_name: value_cols[0]}, inplace=True)
-            ultimate_summary.rename(columns={value_column_name: value_cols[0]}, inplace=True)
-        else:
-            ibnr_summary.rename(columns={value_column_name: 'IBNR_Total'}, inplace=True)
-            ultimate_summary.rename(columns={value_column_name: 'Ultimate_Total'}, inplace=True)
-        
-        # Get LDFs and completed triangle
+        # LDFs and completed triangle
         ldfs_df = model.ldf_.to_frame()
         completed_df = model.full_triangle_.to_frame()
         
-        # Display results
+        # --- AGGREGATE RESULTS ---
+        # Validate grouping columns exist in output
+        valid_grouping, missing_grouping = validate_columns_exist(ibnr_df, index_cols, "IBNR output")
+        if not valid_grouping:
+            st.warning(f"⚠️ Grouping columns not found in IBNR output: {missing_grouping}")
+            st.info("Results will be shown without grouping.")
+            # Create simple summary without grouping
+            ibnr_summary = pd.DataFrame({col: [ibnr_df[ibnr_value_col].sum()] for col in value_cols}) if len(value_cols) == 1 else pd.DataFrame({'Total_IBNR': [ibnr_df[ibnr_value_col].sum()]})
+            ultimate_summary = pd.DataFrame({col: [ultimate_df[ultimate_value_col].sum()] for col in value_cols}) if len(value_cols) == 1 else pd.DataFrame({'Total_Ultimate': [ultimate_df[ultimate_value_col].sum()]})
+        else:
+            # Group by index columns
+            ibnr_summary = ibnr_df.groupby(index_cols)[ibnr_value_col].sum().reset_index()
+            ultimate_summary = ultimate_df.groupby(index_cols)[ultimate_value_col].sum().reset_index()
+            
+            # Rename columns
+            if len(value_cols) == 1:
+                ibnr_summary.rename(columns={ibnr_value_col: value_cols[0]}, inplace=True)
+                ultimate_summary.rename(columns={ultimate_value_col: value_cols[0]}, inplace=True)
+            else:
+                ibnr_summary.rename(columns={ibnr_value_col: 'IBNR_Total'}, inplace=True)
+                ultimate_summary.rename(columns={ultimate_value_col: 'Ultimate_Total'}, inplace=True)
+        
+        # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
+        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols) if index_cols else 'All data'}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
@@ -476,7 +485,7 @@ if uploaded_file is not None:
         st.dataframe(ldfs_df, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Export
+        # --- EXPORT ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
@@ -495,6 +504,7 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error: {str(e)}")
         st.write("Please check your file format and column selections.")
+        logger.exception("Application error")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
