@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 3.0 - Fixed IBNR calculation using Ultimate - Latest Diagonal
+Version: 4.0 - Fixed multiple column selection and correct IBNR calculation
 """
 
 import streamlit as st
@@ -257,15 +257,14 @@ if uploaded_file is not None:
         st.markdown("### Select Numeric Columns (Claim Amounts)")
         num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
         
-        if len(num_options) == 1:
-            value_cols = [num_options[0]]
-            st.info(f"Using '{value_cols[0]}' as the claim amount column.")
-        else:
-            value_cols = st.multiselect("Numeric columns:", options=num_options)
+        # Allow multiple selection
+        value_cols = st.multiselect("Numeric columns:", options=num_options)
         
         if not value_cols:
             st.error("Select at least one numeric column.")
             st.stop()
+
+        st.write(f"Selected numeric columns: {value_cols}")
 
         # --- PROCESS DATA ---
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
@@ -309,116 +308,127 @@ if uploaded_file is not None:
             st.markdown('<div class="data-check-container">✅ No duplicates found</div>', unsafe_allow_html=True)
         
         # Clean numeric values
-        for col in value_cols:
-            if df_filtered[col].dtype == 'object':
-                cleaned = df_filtered[col].astype(str).str.replace(r'[$,€£]', '', regex=True)
+        def clean_numeric_series(series):
+            if series.dtype == 'object':
+                cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
                 cleaned = cleaned.str.replace(r',', '', regex=False)
                 cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
                 cleaned = cleaned.str.strip().replace('', '0')
-                df_filtered[col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
+                return pd.to_numeric(cleaned, errors='coerce').fillna(0)
+            return pd.to_numeric(series, errors='coerce').fillna(0)
+        
+        for col in value_cols:
+            df_filtered[col] = clean_numeric_series(df_filtered[col])
         
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE ---
-        with st.spinner("Creating triangle and running Chain Ladder..."):
-            # Use first numeric column for triangle (chainladder expects single column or list)
-            triangle_col = value_cols[0] if len(value_cols) == 1 else value_cols
+        # --- CREATE TRIANGLE FOR EACH NUMERIC COLUMN ---
+        all_results = []
+        
+        for claim_col in value_cols:
+            st.write(f"**Processing: {claim_col}**")
             
-            triangle = cl.Triangle(
-                data=df_filtered,
-                origin=loss_col,
-                development=report_col,
-                columns=triangle_col,
-                index=index_cols if len(index_cols) > 1 else index_cols[0],
-                cumulative=False,
-                grain=grain
-            )
-            
-            model = cl.Chainladder().fit(triangle)
-            st.success("✅ Model fitted successfully!")
-
-        # --- CALCULATE IBNR (Ultimate - Latest Diagonal) ---
-        # Get ultimate values
-        ultimate_df = model.ultimate_.to_frame().reset_index()
+            with st.spinner(f"Calculating IBNR for {claim_col}..."):
+                # Create triangle
+                triangle = cl.Triangle(
+                    data=df_filtered,
+                    origin=loss_col,
+                    development=report_col,
+                    columns=claim_col,
+                    index=index_cols[0] if len(index_cols) == 1 else index_cols,
+                    cumulative=False,
+                    grain=grain
+                )
+                
+                # Fit model
+                model = cl.Chainladder().fit(triangle)
+                
+                # Get ultimate values (cumulative triangle)
+                ultimate = model.ultimate_
+                
+                # Get latest diagonal (current paid to date)
+                latest = triangle.latest_diagonal
+                
+                # Calculate IBNR = Ultimate - Latest
+                ibnr = ultimate - latest
+                
+                # Convert to DataFrame
+                ibnr_df = ibnr.to_frame().reset_index()
+                ultimate_df = ultimate.to_frame().reset_index()
+                
+                # Get the column name for grouping (LOB)
+                group_col = index_cols[0] if len(index_cols) == 1 else 'index'
+                
+                # Sum IBNR by LOB
+                if group_col in ibnr_df.columns:
+                    ibnr_summary = ibnr_df.groupby(group_col)['values'].sum().reset_index()
+                    ibnr_summary.columns = [group_col, f'IBNR_{claim_col}']
+                else:
+                    # If no grouping, just total
+                    ibnr_summary = pd.DataFrame({group_col: ['Total'], f'IBNR_{claim_col}': [ibnr_df['values'].sum()]})
+                
+                all_results.append(ibnr_summary)
+                
+                # Store individual results for display
+                if claim_col == value_cols[0]:
+                    first_ultimate = ultimate_df
+                    first_ibnr_detail = ibnr_df
         
-        # Get latest diagonal from original triangle
-        latest_diagonal = triangle.latest_diagonal.to_frame().reset_index()
-        
-        # Get the index column name (LOB column)
-        lob_col_name = index_cols[0] if len(index_cols) == 1 else 'index'
-        
-        # Melt ultimate to long format
-        ultimate_long = pd.melt(
-            ultimate_df,
-            id_vars=[lob_col_name],
-            var_name='AccidentYear',
-            value_name='Ultimate'
-        )
-        
-        # Extract year from Period object
-        ultimate_long['AccidentYear'] = ultimate_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
-        ultimate_long = ultimate_long.dropna(subset=['AccidentYear', 'Ultimate'])
-        
-        # Melt latest diagonal to long format
-        latest_long = pd.melt(
-            latest_diagonal,
-            id_vars=[lob_col_name],
-            var_name='AccidentYear',
-            value_name='Latest'
-        )
-        latest_long['AccidentYear'] = latest_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
-        latest_long = latest_long.dropna(subset=['AccidentYear', 'Latest'])
-        
-        # Merge and calculate IBNR
-        ibnr_calc = ultimate_long.merge(latest_long, on=[lob_col_name, 'AccidentYear'], how='left')
-        ibnr_calc['IBNR'] = ibnr_calc['Ultimate'] - ibnr_calc['Latest'].fillna(0)
-        
-        # Summary by LOB
-        ibnr_summary = ibnr_calc.groupby(lob_col_name)['IBNR'].sum().reset_index()
-        ibnr_summary.columns = [lob_col_name, 'Total_IBNR']
-        
-        # Detailed by accident year
-        ibnr_detailed = ibnr_calc[ibnr_calc['IBNR'] > 0][[lob_col_name, 'AccidentYear', 'Ultimate', 'Latest', 'IBNR']]
+        # Combine results from all numeric columns
+        if len(value_cols) > 1:
+            combined_results = all_results[0]
+            for res in all_results[1:]:
+                combined_results = combined_results.merge(res, on=group_col, how='outer')
+        else:
+            combined_results = all_results[0]
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
+        st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
         st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR Summary by Line of Business")
-            st.dataframe(ibnr_summary, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with c2:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR by Accident Year")
-            st.dataframe(ibnr_detailed, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Display ultimate triangle
+        # Display IBNR summary
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Ultimate Claims Triangle")
-        st.dataframe(ultimate_df, use_container_width=True)
+        st.subheader("IBNR Summary by Line of Business")
+        
+        # Format currency
+        display_summary = combined_results.copy()
+        for col in display_summary.columns:
+            if col != group_col:
+                display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "N/A")
+        
+        st.dataframe(display_summary, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Display detailed IBNR by accident year
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("Detailed IBNR by Accident Year")
+        
+        # Format first_ibnr_detail for display
+        if 'first_ibnr_detail' in locals():
+            detail_display = first_ibnr_detail.copy()
+            if 'values' in detail_display.columns:
+                detail_display['IBNR'] = detail_display['values'].apply(lambda x: f"{x:,.2f}")
+                detail_display = detail_display.drop(columns=['values'])
+            st.dataframe(detail_display, use_container_width=True)
+        
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display LDFs
-        ldfs_df = model.ldf_.to_frame()
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
+        ldfs_df = model.ldf_.to_frame()
         st.dataframe(ldfs_df, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
-            ibnr_detailed.to_excel(writer, index=False, sheet_name='IBNR_Detailed')
-            ultimate_df.to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
+            combined_results.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            if 'first_ibnr_detail' in locals():
+                first_ibnr_detail.to_excel(writer, index=False, sheet_name='IBNR_Detailed')
             ldfs_df.to_excel(writer, sheet_name='LDFs')
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
         
