@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 2.0
-Robust version with comprehensive validation and error handling
+Version: 3.0 - Fixed IBNR calculation using Ultimate - Latest Diagonal
 """
 
 import streamlit as st
@@ -13,9 +12,7 @@ from io import BytesIO
 from datetime import date
 import re
 import logging
-from typing import List, Tuple, Optional
 
-# Configure logging for debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -122,50 +119,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Helper Functions ----------
-
-def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Standardise column names: strip spaces, replace special characters"""
-    df.columns = df.columns.astype(str).str.strip().str.replace(r'[\n\r\t]', ' ', regex=True)
-    return df
-
-def detect_duplicate_columns(df: pd.DataFrame) -> List[str]:
-    """Identify duplicate column names"""
-    return [col for col in df.columns if df.columns.tolist().count(col) > 1]
-
-def validate_columns_exist(df: pd.DataFrame, required_cols: List[str], context: str) -> Tuple[bool, List[str]]:
-    """Validate that all required columns exist in the dataframe"""
-    missing = [col for col in required_cols if col not in df.columns]
-    if missing:
-        logger.warning(f"Missing columns in {context}: {missing}")
-    return len(missing) == 0, missing
-
-def clean_numeric_series(series: pd.Series) -> pd.Series:
-    """Clean numeric values by removing currency symbols and converting parentheses"""
-    if series.dtype == 'object':
-        cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
-        cleaned = cleaned.str.replace(r',', '', regex=False)
-        cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
-        cleaned = cleaned.str.strip().replace('', np.nan)
-        return pd.to_numeric(cleaned, errors='coerce')
-    return pd.to_numeric(series, errors='coerce')
-
-def inspect_chainladder_output(df: pd.DataFrame, name: str, st_container) -> Tuple[pd.DataFrame, str]:
-    """Dynamically inspect Chainladder output to find the value column"""
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    # Debug output (shown in expander only)
-    with st_container.expander(f"Debug: {name} Output Structure"):
-        st_container.write(f"Columns: {df.columns.tolist()}")
-        st_container.write(f"Numeric columns: {numeric_cols}")
-        st_container.write(f"Shape: {df.shape}")
-        st_container.dataframe(df.head())
-    
-    if not numeric_cols:
-        raise ValueError(f"No numeric columns found in {name} output")
-    
-    return df, numeric_cols[0]
-
 # ---------- Header ----------
 st.markdown("""
 <div class="header">
@@ -207,8 +160,10 @@ st.markdown("""
 col1, col2 = st.columns(2)
 with col1:
     from_date = st.date_input("From Date", value=date(2020, 1, 1))
+    st.caption("Claims with Loss Date on or after this date")
 with col2:
     to_date = st.date_input("To Date", value=date(2024, 12, 31))
+    st.caption("Claims with Loss Date on or before this date")
 
 from_date = pd.to_datetime(from_date)
 to_date = pd.to_datetime(to_date)
@@ -244,35 +199,18 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, encoding='cp1252')
         else:
-            # Excel: check for merged headers by reading with header=None first
-            df_raw = pd.read_excel(uploaded_file, header=None)
-            # Check if first row contains "Unnamed" patterns (indicates merged cells)
-            first_row = df_raw.iloc[0].astype(str)
-            if first_row.str.contains('Unnamed', na=False).any():
-                st.warning("⚠️ Detected merged cells or irregular headers in Excel file. Please ensure column names are in a single row.")
-                # Try to use second row as header
-                df = pd.read_excel(uploaded_file, header=1)
-            else:
-                df = pd.read_excel(uploaded_file)
+            df = pd.read_excel(uploaded_file)
 
         # Clean column names
-        df = clean_column_names(df)
+        df.columns = df.columns.astype(str).str.strip()
         
-        # Detect duplicate columns
-        duplicates = detect_duplicate_columns(df)
-        if duplicates:
-            st.warning(f"⚠️ Duplicate column names detected: {duplicates}. This may cause unexpected behaviour.")
-        
-        # Drop completely empty columns
-        df = df.dropna(axis=1, how='all')
-        
-        # Remove unnamed columns but warn user
+        # Drop unnamed columns
         unnamed = [c for c in df.columns if c.lower().startswith('unnamed')]
         if unnamed:
-            st.info(f"Removed {len(unnamed)} unnamed column(s) (likely from merged cells or blank headers).")
             df = df.drop(columns=unnamed)
+            st.info(f"Removed {len(unnamed)} unnamed column(s).")
 
-        st.markdown("#### Preview")
+        st.markdown("#### Preview of uploaded data")
         st.dataframe(df.head())
         st.markdown("---")
 
@@ -318,32 +256,20 @@ if uploaded_file is not None:
         st.markdown("---")
         st.markdown("### Select Numeric Columns (Claim Amounts)")
         num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
-        value_cols = st.multiselect("Numeric columns:", options=num_options)
+        
+        if len(num_options) == 1:
+            value_cols = [num_options[0]]
+            st.info(f"Using '{value_cols[0]}' as the claim amount column.")
+        else:
+            value_cols = st.multiselect("Numeric columns:", options=num_options)
+        
         if not value_cols:
             st.error("Select at least one numeric column.")
             st.stop()
 
-        # --- DATA VALIDATION BEFORE PROCESSING ---
-        all_selected = [loss_col, report_col] + index_cols + value_cols
-        
-        # Validate all selected columns exist
-        valid, missing = validate_columns_exist(df, all_selected, "uploaded data")
-        if not valid:
-            st.error(f"❌ Selected columns not found: {missing}")
-            st.stop()
-        
-        st.success("✅ All selected columns validated")
-
         # --- PROCESS DATA ---
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
-        
-        # Check for date conversion failures
-        loss_na_count = df[loss_col].isna().sum()
-        report_na_count = df[report_col].isna().sum()
-        if loss_na_count > 0 or report_na_count > 0:
-            st.warning(f"⚠️ {loss_na_count} rows could not parse Loss Date, {report_na_count} rows could not parse Report Date.")
-            df = df.dropna(subset=[loss_col, report_col])
         
         # Filter by date range
         df_filtered = df[(df[loss_col] >= from_date) & (df[loss_col] <= to_date)].copy()
@@ -357,141 +283,144 @@ if uploaded_file is not None:
         # --- DATA QUALITY CHECKS ---
         st.markdown("### Data Quality Checks")
         
-        # Check 1: Missing values in selected columns
-        missing_after_filter = []
-        for col in all_selected:
+        # Check missing values
+        missing = []
+        for col in [loss_col, report_col] + index_cols + value_cols:
             cnt = df_filtered[col].isna().sum()
             if cnt > 0:
-                missing_after_filter.append(f"{col} ({cnt})")
+                missing.append(f"{col} ({cnt})")
         
-        if missing_after_filter:
-            st.markdown(f'<div class="data-check-error">❌ Missing values in filtered data: {", ".join(missing_after_filter)}</div>', unsafe_allow_html=True)
+        if missing:
+            st.markdown(f'<div class="data-check-error">❌ Missing values: {", ".join(missing)}</div>', unsafe_allow_html=True)
             st.stop()
         
-        # Check 2: Date reasonability
-        invalid_dates = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
-        if len(invalid_dates) > 0:
-            st.markdown(f'<div class="data-check-error">❌ {len(invalid_dates)} rows with Report Date before Loss Date</div>', unsafe_allow_html=True)
-            with st.expander("View invalid rows"):
-                st.dataframe(invalid_dates[[loss_col, report_col]].head(10))
+        # Check date reasonability
+        invalid = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
+        if len(invalid) > 0:
+            st.markdown(f'<div class="data-check-error">❌ {len(invalid)} rows with Report Date before Loss Date</div>', unsafe_allow_html=True)
             st.stop()
         
-        # Check 3: Duplicate rows
+        # Remove duplicates
         dup_count = df_filtered.duplicated().sum()
         if dup_count > 0:
             df_filtered = df_filtered.drop_duplicates()
             st.markdown(f'<div class="data-check-warning">⚠️ Removed {dup_count} duplicate rows</div>', unsafe_allow_html=True)
         else:
-            st.markdown('<div class="data-check-container">✅ No duplicate rows found</div>', unsafe_allow_html=True)
+            st.markdown('<div class="data-check-container">✅ No duplicates found</div>', unsafe_allow_html=True)
         
-        # Check 4: Clean numeric values
+        # Clean numeric values
         for col in value_cols:
-            original_non_numeric = df_filtered[col].dtype == 'object'
-            df_filtered[col] = clean_numeric_series(df_filtered[col]).fillna(0)
-            if original_non_numeric:
-                st.markdown(f'<div class="data-check-warning">⚠️ Column "{col}" contained non-numeric values (converted to 0)</div>', unsafe_allow_html=True)
+            if df_filtered[col].dtype == 'object':
+                cleaned = df_filtered[col].astype(str).str.replace(r'[$,€£]', '', regex=True)
+                cleaned = cleaned.str.replace(r',', '', regex=False)
+                cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
+                cleaned = cleaned.str.strip().replace('', '0')
+                df_filtered[col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
         
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
         # --- CREATE TRIANGLE ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
-            try:
-                triangle = cl.Triangle(
-                    data=df_filtered,
-                    origin=loss_col,
-                    development=report_col,
-                    columns=value_cols,
-                    index=index_cols,
-                    cumulative=False,
-                    grain=grain
-                )
-                
-                # Validate triangle creation
-                if triangle.shape[0] == 0 or triangle.shape[1] == 0:
-                    st.error("Triangle creation resulted in empty dimensions. Please check your data.")
-                    st.stop()
-                
-                model = cl.Chainladder().fit(triangle)
-                st.success("✅ Model fitted successfully!")
-                
-            except Exception as e:
-                st.error(f"Error in triangle/model creation: {str(e)}")
-                st.stop()
-
-        # --- PROCESS CHAINLADDER OUTPUT ---
-        # Create debug container (collapsible)
-        debug_container = st.container()
-        
-        # Extract IBNR and Ultimate
-        ibnr_raw = model.ibnr_
-        ultimate_raw = model.ultimate_
-        
-        # Convert to DataFrame
-        ibnr_df = ibnr_raw.to_frame().reset_index()
-        ultimate_df = ultimate_raw.to_frame().reset_index()
-        
-        # Dynamically inspect outputs
-        ibnr_df, ibnr_value_col = inspect_chainladder_output(ibnr_df, "IBNR", debug_container)
-        ultimate_df, ultimate_value_col = inspect_chainladder_output(ultimate_df, "Ultimate", debug_container)
-        
-        # LDFs and completed triangle
-        ldfs_df = model.ldf_.to_frame()
-        completed_df = model.full_triangle_.to_frame()
-        
-        # --- AGGREGATE RESULTS ---
-        # Validate grouping columns exist in output
-        valid_grouping, missing_grouping = validate_columns_exist(ibnr_df, index_cols, "IBNR output")
-        if not valid_grouping:
-            st.warning(f"⚠️ Grouping columns not found in IBNR output: {missing_grouping}")
-            st.info("Results will be shown without grouping.")
-            # Create simple summary without grouping
-            ibnr_summary = pd.DataFrame({col: [ibnr_df[ibnr_value_col].sum()] for col in value_cols}) if len(value_cols) == 1 else pd.DataFrame({'Total_IBNR': [ibnr_df[ibnr_value_col].sum()]})
-            ultimate_summary = pd.DataFrame({col: [ultimate_df[ultimate_value_col].sum()] for col in value_cols}) if len(value_cols) == 1 else pd.DataFrame({'Total_Ultimate': [ultimate_df[ultimate_value_col].sum()]})
-        else:
-            # Group by index columns
-            ibnr_summary = ibnr_df.groupby(index_cols)[ibnr_value_col].sum().reset_index()
-            ultimate_summary = ultimate_df.groupby(index_cols)[ultimate_value_col].sum().reset_index()
+            # Use first numeric column for triangle (chainladder expects single column or list)
+            triangle_col = value_cols[0] if len(value_cols) == 1 else value_cols
             
-            # Rename columns
-            if len(value_cols) == 1:
-                ibnr_summary.rename(columns={ibnr_value_col: value_cols[0]}, inplace=True)
-                ultimate_summary.rename(columns={ultimate_value_col: value_cols[0]}, inplace=True)
-            else:
-                ibnr_summary.rename(columns={ibnr_value_col: 'IBNR_Total'}, inplace=True)
-                ultimate_summary.rename(columns={ultimate_value_col: 'Ultimate_Total'}, inplace=True)
+            triangle = cl.Triangle(
+                data=df_filtered,
+                origin=loss_col,
+                development=report_col,
+                columns=triangle_col,
+                index=index_cols if len(index_cols) > 1 else index_cols[0],
+                cumulative=False,
+                grain=grain
+            )
+            
+            model = cl.Chainladder().fit(triangle)
+            st.success("✅ Model fitted successfully!")
+
+        # --- CALCULATE IBNR (Ultimate - Latest Diagonal) ---
+        # Get ultimate values
+        ultimate_df = model.ultimate_.to_frame().reset_index()
+        
+        # Get latest diagonal from original triangle
+        latest_diagonal = triangle.latest_diagonal.to_frame().reset_index()
+        
+        # Get the index column name (LOB column)
+        lob_col_name = index_cols[0] if len(index_cols) == 1 else 'index'
+        
+        # Melt ultimate to long format
+        ultimate_long = pd.melt(
+            ultimate_df,
+            id_vars=[lob_col_name],
+            var_name='AccidentYear',
+            value_name='Ultimate'
+        )
+        
+        # Extract year from Period object
+        ultimate_long['AccidentYear'] = ultimate_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
+        ultimate_long = ultimate_long.dropna(subset=['AccidentYear', 'Ultimate'])
+        
+        # Melt latest diagonal to long format
+        latest_long = pd.melt(
+            latest_diagonal,
+            id_vars=[lob_col_name],
+            var_name='AccidentYear',
+            value_name='Latest'
+        )
+        latest_long['AccidentYear'] = latest_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
+        latest_long = latest_long.dropna(subset=['AccidentYear', 'Latest'])
+        
+        # Merge and calculate IBNR
+        ibnr_calc = ultimate_long.merge(latest_long, on=[lob_col_name, 'AccidentYear'], how='left')
+        ibnr_calc['IBNR'] = ibnr_calc['Ultimate'] - ibnr_calc['Latest'].fillna(0)
+        
+        # Summary by LOB
+        ibnr_summary = ibnr_calc.groupby(lob_col_name)['IBNR'].sum().reset_index()
+        ibnr_summary.columns = [lob_col_name, 'Total_IBNR']
+        
+        # Detailed by accident year
+        ibnr_detailed = ibnr_calc[ibnr_calc['IBNR'] > 0][[lob_col_name, 'AccidentYear', 'Ultimate', 'Latest', 'IBNR']]
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols) if index_cols else 'All data'}")
+        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
         with c1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR Summary")
+            st.subheader("IBNR Summary by Line of Business")
             st.dataframe(ibnr_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         with c2:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("Ultimate Claims")
-            st.dataframe(ultimate_summary, use_container_width=True)
+            st.subheader("IBNR by Accident Year")
+            st.dataframe(ibnr_detailed, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
+        # Display ultimate triangle
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("Ultimate Claims Triangle")
+        st.dataframe(ultimate_df, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Display LDFs
+        ldfs_df = model.ldf_.to_frame()
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
         st.dataframe(ldfs_df, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # --- EXPORT ---
+        # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
-            ultimate_summary.to_excel(writer, index=False, sheet_name='Ultimate_Summary')
+            ibnr_detailed.to_excel(writer, index=False, sheet_name='IBNR_Detailed')
+            ultimate_df.to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
             ldfs_df.to_excel(writer, sheet_name='LDFs')
-            completed_df.to_excel(writer, sheet_name='Completed_Triangle')
+            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
         
         output.seek(0)
         
@@ -499,6 +428,7 @@ if uploaded_file is not None:
         safe_original = re.sub(r'[\\/*?:"<>|]', "", base_filename).strip() or "Data"
         file_name = f"{safe_client}_{safe_original}_IBNR_Results_{from_date.year}_{to_date.year}.xlsx"
         
+        st.markdown("### Download Results")
         st.download_button("📥 Download Excel Report", data=output, file_name=file_name)
         
     except Exception as e:
