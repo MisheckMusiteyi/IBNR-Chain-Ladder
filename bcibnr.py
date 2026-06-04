@@ -9,10 +9,9 @@ import re
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
-# ---------- CUSTOM CSS (same as before) ----------
+# ---------- CUSTOM CSS (African Actuarial Consultants theme) ----------
 st.markdown("""
 <style>
-    /* Global */
     .stApp {
         background-color: #FFFFFF;
         color: #000000;
@@ -42,7 +41,6 @@ st.markdown("""
         text-decoration: none;
         font-weight: 500;
         transition: color 0.3s;
-        font-family: 'Calisto MT', serif;
     }
     .nav-links a:hover {
         color: #D4AF37;
@@ -59,13 +57,11 @@ st.markdown("""
         color: #D4AF37;
         font-size: 2.5rem;
         margin-bottom: 0.5rem;
-        font-family: 'Calisto MT', serif;
     }
     .hero p {
         font-size: 1.2rem;
         max-width: 800px;
         margin: 0 auto;
-        font-family: 'Calisto MT', serif;
     }
     
     .main-container {
@@ -160,7 +156,6 @@ st.markdown("""
         margin-top: 0;
         border-bottom: 2px solid #D4AF37;
         padding-bottom: 0.5rem;
-        font-family: 'Calisto MT', serif;
     }
     
     .footer {
@@ -174,7 +169,6 @@ st.markdown("""
     .footer a {
         color: #D4AF37;
         text-decoration: none;
-        font-family: 'Calisto MT', serif;
     }
     
     .stButton > button, .stDownloadButton > button {
@@ -185,7 +179,6 @@ st.markdown("""
         font-weight: bold;
         padding: 0.5rem 1rem;
         transition: all 0.3s;
-        font-family: 'Calisto MT', serif !important;
     }
     .stButton > button:hover, .stDownloadButton > button:hover {
         background-color: #B8960F;
@@ -210,9 +203,9 @@ st.markdown("""
         overflow: hidden;
     }
     
-    .data-check-container {
-        background-color: #E3F2FD;
-        border: 2px solid #2196F3;
+    .data-check-error {
+        background-color: #FFEBEE;
+        border: 2px solid #F44336;
         border-radius: 10px;
         padding: 1rem;
         margin-bottom: 1rem;
@@ -224,9 +217,9 @@ st.markdown("""
         padding: 1rem;
         margin-bottom: 1rem;
     }
-    .data-check-error {
-        background-color: #FFEBEE;
-        border: 2px solid #F44336;
+    .data-check-container {
+        background-color: #E3F2FD;
+        border: 2px solid #2196F3;
         border-radius: 10px;
         padding: 1rem;
         margin-bottom: 1rem;
@@ -279,10 +272,8 @@ st.markdown("""
 col1, col2 = st.columns(2)
 with col1:
     from_date = st.date_input("From Date", value=date(2020, 1, 1))
-    st.caption("Claims with Loss Date on or after this date")
 with col2:
     to_date = st.date_input("To Date", value=date(2024, 12, 31))
-    st.caption("Claims with Loss Date on or before this date")
 
 from_date = pd.to_datetime(from_date)
 to_date = pd.to_datetime(to_date)
@@ -300,7 +291,6 @@ st.markdown("""
 grain_options = {'Yearly': 'Y', 'Quarterly': 'Q', 'Monthly': 'M'}
 selected_grain_label = st.selectbox("Select Grain:", options=list(grain_options.keys()), index=0)
 selected_grain = grain_options[selected_grain_label]
-st.caption(f"Selected grain: {selected_grain_label} ({selected_grain})")
 
 # File uploader
 uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
@@ -322,62 +312,43 @@ if uploaded_file is not None:
         else:
             df = pd.read_excel(uploaded_file)
 
+        # Drop unnamed columns
         unnamed = [c for c in df.columns if c.startswith('Unnamed:')]
         if unnamed:
             df = df.drop(columns=unnamed)
             st.info(f"Dropped {len(unnamed)} unnamed column(s).")
 
-        # Show available columns
         st.markdown("#### Preview of uploaded data")
         st.dataframe(df.head())
-        
-        # Show column names for debugging
-        with st.expander("View available column names"):
-            st.write(df.columns.tolist())
-        
         st.markdown("---")
 
         # ============================================================
-        # COLUMN MAPPING - ALL COLUMNS FROM USER SELECTION
+        # COLUMN MAPPING - USER SELECTS EVERYTHING
         # ============================================================
         st.markdown("### Map Your Columns to Required Fields")
         
         all_columns = df.columns.tolist()
         
-        # Loss Date and Report Date in two columns
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("""
-            <div class="required-container">
-                <h3>Loss_Date</h3>
-                <p>The date when the loss occurred (origin period)</p>
-            </div>
-            """, unsafe_allow_html=True)
-            loss_date_col = st.selectbox("Select your Loss Date column", options=[""] + all_columns, key="loss_date")
-            if loss_date_col == "": 
-                loss_date_col = None
+        # Display available columns for debugging
+        with st.expander("View available column names in your file"):
+            st.write(all_columns)
         
-        with col2:
-            st.markdown("""
-            <div class="required-container">
-                <h3>Report_Date</h3>
-                <p>The date when the claim was reported (development period)</p>
-            </div>
-            """, unsafe_allow_html=True)
-            report_date_col = st.selectbox("Select your Report Date column", options=[""] + all_columns, key="report_date")
-            if report_date_col == "": 
-                report_date_col = None
-
+        # Loss Date column
+        loss_date_col = st.selectbox("Select your Loss Date column", options=[""] + all_columns, key="loss_date")
+        if loss_date_col == "":
+            st.error("Please select a Loss Date column.")
+            st.stop()
+        
+        # Report Date column
+        report_date_col = st.selectbox("Select your Report Date column", options=[""] + all_columns, key="report_date")
+        if report_date_col == "":
+            st.error("Please select a Report Date column.")
+            st.stop()
+        
         st.markdown("---")
         
-        # Index Columns Selection
-        st.markdown("""
-        <div class="grouping-container">
-            <h3>📊 Index Columns (Grouping)</h3>
-            <p>Select the columns you want to group by (e.g., Line_of_Business, Region).</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
+        # Index/Grouping columns
+        st.markdown("### Select Index/Grouping Columns")
         grouping_options = [col for col in all_columns if col not in [loss_date_col, report_date_col]]
         index_cols = st.multiselect(
             "Choose columns to group by (at least one required):",
@@ -386,14 +357,13 @@ if uploaded_file is not None:
         )
         
         if not index_cols:
-            st.error("Please select at least one index (grouping) column.")
+            st.error("Please select at least one grouping column.")
             st.stop()
-
-        st.markdown("---")
-
-        # Numeric columns selection
-        st.markdown("### Select Numeric Columns (Claim Amounts)")
         
+        st.markdown("---")
+        
+        # Numeric columns
+        st.markdown("### Select Numeric Columns (Claim Amounts)")
         numeric_options = [col for col in all_columns if col not in [loss_date_col, report_date_col] + index_cols]
         
         if not numeric_options:
@@ -405,19 +375,17 @@ if uploaded_file is not None:
             options=numeric_options,
             default=[]
         )
-
+        
         if not selected_value_cols:
             st.warning("Please select at least one numeric column.")
             st.stop()
-
+        
         # ============================================================
-        # DATA QUALITY CHECKS
+        # DATA CLEANING AND CHECKS
         # ============================================================
         st.markdown("### Data Quality Checks")
         
-        all_selected_cols = [loss_date_col, report_date_col] + index_cols + selected_value_cols
-        df_original_len = len(df)
-        
+        # Function to clean numeric values
         def clean_numeric(series):
             if series.dtype == 'object':
                 cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
@@ -429,74 +397,55 @@ if uploaded_file is not None:
             else:
                 return pd.to_numeric(series, errors='coerce')
         
-        # 1. Missing Values Check
-        st.markdown("#### 1. Missing Values Check")
-        missing_in_selected = False
-        for col in all_selected_cols:
-            if col in df.columns:
-                missing_count = df[col].isna().sum()
-                if missing_count > 0:
-                    missing_in_selected = True
-                    st.warning(f"Column '{col}' has {missing_count} missing value(s).")
+        # Clean numeric columns
+        for col in selected_value_cols:
+            df[col] = clean_numeric(df[col])
         
-        if missing_in_selected:
-            st.error("❌ Missing values found. Please fix and re-upload.")
+        # Convert dates
+        df[loss_date_col] = pd.to_datetime(df[loss_date_col], errors='coerce')
+        df[report_date_col] = pd.to_datetime(df[report_date_col], errors='coerce')
+        
+        # Check for missing values
+        missing_cols = []
+        for col in [loss_date_col, report_date_col] + index_cols + selected_value_cols:
+            if df[col].isna().any():
+                missing_cols.append(col)
+        
+        if missing_cols:
+            st.markdown(f"""
+            <div class="data-check-error">
+                <b>❌ Missing values found in columns:</b> {', '.join(missing_cols)}<br>
+                Please fix missing values and re-upload.
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
-        else:
-            st.success("✅ No missing values found.")
         
-        # 2. Duplicate Rows Check
-        st.markdown("#### 2. Duplicate Rows Check")
-        duplicate_count = len(df[df.duplicated()])
+        # Check date reasonability
+        invalid_dates = df[df[report_date_col] < df[loss_date_col]]
+        if len(invalid_dates) > 0:
+            st.markdown(f"""
+            <div class="data-check-error">
+                <b>❌ Found {len(invalid_dates)} rows where Report_Date is before Loss_Date.</b><br>
+                Please fix these dates and re-upload.
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+        
+        # Remove duplicates
+        duplicate_count = df.duplicated().sum()
         if duplicate_count > 0:
             df = df.drop_duplicates()
-            st.success(f"✅ Removed {duplicate_count} duplicate row(s).")
-        else:
-            st.success("✅ No duplicate rows found.")
+            st.info(f"✅ Removed {duplicate_count} duplicate rows.")
         
-        # 3. Date Reasonability Check
-        st.markdown("#### 3. Date Reasonability Check")
-        df['temp_loss'] = pd.to_datetime(df[loss_date_col], errors='coerce')
-        df['temp_report'] = pd.to_datetime(df[report_date_col], errors='coerce')
-        invalid_dates = df[df['temp_report'] < df['temp_loss']]
-        
-        if len(invalid_dates) > 0:
-            st.error(f"❌ {len(invalid_dates)} rows have Report_Date before Loss_Date.")
-            st.stop()
-        else:
-            st.success("✅ All dates valid (Report_Date >= Loss_Date).")
-        
-        # 4. Non-Numeric Values Check
-        st.markdown("#### 4. Non-Numeric Values Check")
-        for col in selected_value_cols:
-            test_clean = clean_numeric(df[col])
-            failed = test_clean.isna() & df[col].notna()
-            if failed.sum() > 0:
-                st.info(f"Converting {failed.sum()} non-numeric values in '{col}' to 0.")
-                df[col] = clean_numeric(df[col]).fillna(0)
-        
-        st.success("✅ Data quality checks complete.")
+        st.success("✅ All data quality checks passed!")
         st.markdown("---")
         
         # ============================================================
-        # PREPARE DATA FOR TRIANGLE - USING ONLY SELECTED COLUMNS
+        # FILTER BY DATE RANGE
         # ============================================================
-        
-        # Build clean dataframe using only the selected column names
-        df_clean = pd.DataFrame()
-        df_clean['Loss_Date'] = pd.to_datetime(df[loss_date_col], errors='coerce')
-        df_clean['Report_Date'] = pd.to_datetime(df[report_date_col], errors='coerce')
-        
-        for col in index_cols:
-            df_clean[col] = df[col]
-        
-        for col in selected_value_cols:
-            df_clean[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        
-        # Filter by date range
-        df_filtered = df_clean[
-            (df_clean['Loss_Date'] >= from_date) & 
-            (df_clean['Loss_Date'] <= to_date)
+        df_filtered = df[
+            (df[loss_date_col] >= from_date) & 
+            (df[loss_date_col] <= to_date)
         ]
         
         if df_filtered.empty:
@@ -506,13 +455,30 @@ if uploaded_file is not None:
         st.success(f"**Filtered:** {len(df_filtered)} claims selected")
         
         # ============================================================
-        # CREATE TRIANGLE - USING USER-SELECTED COLUMN NAMES
+        # PREPARE DATA FOR TRIANGLE
+        # ============================================================
+        # Rename columns to standard names for chainladder
+        df_triangle = df_filtered.rename(columns={
+            loss_date_col: 'origin_date',
+            report_date_col: 'dev_date'
+        })
+        
+        # Keep index columns with original names
+        for col in index_cols:
+            df_triangle[col] = df_triangle[col]
+        
+        # Keep numeric columns with original names
+        for col in selected_value_cols:
+            df_triangle[col] = df_triangle[col]
+        
+        # ============================================================
+        # CREATE TRIANGLE
         # ============================================================
         try:
             triangle = cl.Triangle(
-                data=df_filtered,
-                origin='Loss_Date',
-                development='Report_Date',
+                data=df_triangle,
+                origin='origin_date',
+                development='dev_date',
                 columns=selected_value_cols,
                 index=index_cols,
                 cumulative=False,
@@ -548,15 +514,20 @@ if uploaded_file is not None:
         completed_df = completed_triangle.to_frame()
         
         # Aggregate by index columns
-        ibnr_summary = ibnr_df.groupby(index_cols)[selected_value_cols].sum().reset_index()
-        ultimate_summary = ultimate_df.groupby(index_cols)[selected_value_cols].sum().reset_index()
+        if index_cols:
+            ibnr_summary = ibnr_df.groupby(index_cols)[selected_value_cols].sum().reset_index()
+            ultimate_summary = ultimate_df.groupby(index_cols)[selected_value_cols].sum().reset_index()
+        else:
+            ibnr_summary = pd.DataFrame([ibnr_df[selected_value_cols].sum()], columns=selected_value_cols)
+            ultimate_summary = pd.DataFrame([ultimate_df[selected_value_cols].sum()], columns=selected_value_cols)
         
         # ============================================================
         # DISPLAY RESULTS
         # ============================================================
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {selected_grain_label} | **Grouped by:** {', '.join(index_cols)}")
+        if index_cols:
+            st.markdown(f"**Grouped by:** {', '.join(index_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
