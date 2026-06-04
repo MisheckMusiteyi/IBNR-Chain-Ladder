@@ -562,7 +562,7 @@ if uploaded_file is not None:
         # -----------------------------------------------------------------
         # SUMMARY
         # -----------------------------------------------------------------
-        st.markdown("#### 📋 Data Quality Summary")
+        st.markdown("####  Data Quality Summary")
         
         rows_removed = df_original_len - len(df)
         if rows_removed > 0 or conversion_issues:
