@@ -576,7 +576,7 @@ if uploaded_file is not None:
         else:
             st.markdown('<div class="data-check-container">', unsafe_allow_html=True)
             st.markdown("**✅ All data quality checks passed!**")
-            st.markdown('</div>')
+            
         
         st.markdown("---")
 
