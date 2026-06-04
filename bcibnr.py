@@ -9,7 +9,7 @@ import re
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
-# ---------- CUSTOM CSS (African Actuarial Consultants theme) ----------
+# ---------- CUSTOM CSS (same as before, omitted for brevity - add your CSS here) ----------
 st.markdown("""
 <style>
     .stApp {
@@ -18,7 +18,6 @@ st.markdown("""
         font-family: 'Calisto MT', serif;
         font-size: 11pt;
     }
-    
     body, p, h1, h2, h3, h4, h5, h6, div, span, label, .stMarkdown, 
     .stTextInput label, .stDateInput label, .stSelectbox label, .stMultiSelect label,
     .stButton button, .stDownloadButton button, .stFileUploader label,
@@ -26,7 +25,6 @@ st.markdown("""
     .stProgress, .stToast, .stSidebar, .stMetric {
         font-family: 'Calisto MT', serif !important;
     }
-    
     .header {
         background-color: #000000;
         padding: 1rem 2rem;
@@ -45,7 +43,6 @@ st.markdown("""
     .nav-links a:hover {
         color: #D4AF37;
     }
-    
     .hero {
         background: linear-gradient(135deg, #000000 0%, #333333 100%);
         color: #FFFFFF;
@@ -63,13 +60,11 @@ st.markdown("""
         max-width: 800px;
         margin: 0 auto;
     }
-    
     .main-container {
         max-width: 1400px;
         margin: 2rem auto;
         padding: 0 2rem;
     }
-    
     .required-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -95,7 +90,6 @@ st.markdown("""
         margin-bottom: 0;
         line-height: 1.3;
     }
-    
     .grouping-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -110,7 +104,6 @@ st.markdown("""
         font-size: 1.1rem;
         font-weight: bold;
     }
-    
     .date-range-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -126,7 +119,6 @@ st.markdown("""
         font-size: 1.1rem;
         font-weight: bold;
     }
-    
     .grain-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -142,7 +134,6 @@ st.markdown("""
         font-size: 1.1rem;
         font-weight: bold;
     }
-    
     .card {
         background-color: #F9F9F9;
         border: 1px solid #D4AF37;
@@ -157,7 +148,6 @@ st.markdown("""
         border-bottom: 2px solid #D4AF37;
         padding-bottom: 0.5rem;
     }
-    
     .footer {
         background-color: #000000;
         color: #FFFFFF;
@@ -170,7 +160,6 @@ st.markdown("""
         color: #D4AF37;
         text-decoration: none;
     }
-    
     .stButton > button, .stDownloadButton > button {
         background-color: #D4AF37;
         color: #000000;
@@ -184,25 +173,21 @@ st.markdown("""
         background-color: #B8960F;
         color: #FFFFFF;
     }
-    
     .stFileUploader {
         border: 2px dashed #D4AF37;
         border-radius: 5px;
         padding: 1rem;
     }
-    
     .stMultiSelect [data-baseweb="select"], 
     .stSelectbox [data-baseweb="select"] {
         border: 1px solid #D4AF37;
         border-radius: 4px;
     }
-    
     .dataframe {
         border: 1px solid #D4AF37;
         border-radius: 8px;
         overflow: hidden;
     }
-    
     .data-check-container {
         background-color: #E3F2FD;
         border: 2px solid #2196F3;
@@ -224,7 +209,6 @@ st.markdown("""
         padding: 1rem;
         margin-bottom: 1rem;
     }
-    
     .stSelectbox div[data-baseweb="select"] {
         width: 100%;
     }
@@ -407,8 +391,8 @@ if uploaded_file is not None:
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- FIXED: PROPERLY EXTRACT CHAINLADDER RESULTS ---
-        with st.spinner("Running Chain Ladder..."):
+        # --- CREATE TRIANGLE ---
+        with st.spinner("Creating triangle and running Chain Ladder..."):
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin=loss_col,
@@ -421,60 +405,53 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- FIXED RESULTS PROCESSING ---
-        # Chainladder returns results with 'value' column, not original column names
-        ibnr = model.ibnr_.to_frame().reset_index()
-        ultimate = model.ultimate_.to_frame().reset_index()
-        ldfs = model.ldf_.to_frame()
-        completed = model.full_triangle_.to_frame()
-
-        # Display column structure for debugging (optional, remove after testing)
-        with st.expander("Debug: View IBNR column structure"):
-            st.write("IBNR columns:", ibnr.columns.tolist())
-            st.write("Ultimate columns:", ultimate.columns.tolist())
-
-        # The value column contains the actual IBNR amounts
-        # We need to pivot or group appropriately
+        # --- FIXED: PROPERLY EXTRACT AND RESHAPE RESULTS ---
+        # Get the raw IBNR data
+        ibnr_raw = model.ibnr_
+        ultimate_raw = model.ultimate_
         
-        # For IBNR and Ultimate, the DataFrame has columns: index_cols + ['origin', 'development', 'value']
-        # We want to sum by index_cols across all origins and developments
+        # Convert to DataFrame and reset index
+        ibnr_df = ibnr_raw.to_frame().reset_index()
+        ultimate_df = ultimate_raw.to_frame().reset_index()
         
-        if len(value_cols) == 1:
-            # Single value column - simpler
-            ibnr_summary = ibnr.groupby(index_cols)['value'].sum().reset_index()
-            ibnr_summary.rename(columns={'value': value_cols[0]}, inplace=True)
-            
-            ultimate_summary = ultimate.groupby(index_cols)['value'].sum().reset_index()
-            ultimate_summary.rename(columns={'value': value_cols[0]}, inplace=True)
+        # Display debug info
+        st.write("Debug: IBNR DataFrame columns:", ibnr_df.columns.tolist())
+        st.write("Debug: IBNR DataFrame shape:", ibnr_df.shape)
+        st.write("Debug: First few rows:", ibnr_df.head())
+        
+        # The value column name might be different (e.g., 'values', 'ibnr', etc.)
+        # Find the numeric column(s) in the DataFrame
+        numeric_cols_in_ibnr = ibnr_df.select_dtypes(include=[np.number]).columns.tolist()
+        st.write("Debug: Numeric columns in IBNR:", numeric_cols_in_ibnr)
+        
+        if len(numeric_cols_in_ibnr) == 0:
+            st.error("No numeric columns found in IBNR output. Please check the data.")
+            st.stop()
+        
+        # Use the first numeric column as the value column
+        value_column_name = numeric_cols_in_ibnr[0]
+        st.write(f"Debug: Using '{value_column_name}' as the value column")
+        
+        # Sum by index columns
+        if len(index_cols) == 1:
+            ibnr_summary = ibnr_df.groupby(index_cols)[value_column_name].sum().reset_index()
+            ultimate_summary = ultimate_df.groupby(index_cols)[value_column_name].sum().reset_index()
         else:
-            # Multiple value columns - need to handle the structure
-            # The 'columns' dimension becomes a level in the index or separate column
-            # Let's inspect and handle dynamically
-            if 'columns' in ibnr.columns:
-                # Pivot the data
-                ibnr_summary = ibnr.pivot_table(
-                    index=index_cols, 
-                    columns='columns', 
-                    values='value', 
-                    aggfunc='sum'
-                ).reset_index()
-                ibnr_summary.columns.name = None
-                
-                ultimate_summary = ultimate.pivot_table(
-                    index=index_cols, 
-                    columns='columns', 
-                    values='value', 
-                    aggfunc='sum'
-                ).reset_index()
-                ultimate_summary.columns.name = None
-            else:
-                # Fallback: sum all values
-                ibnr_summary = ibnr.groupby(index_cols)['value'].sum().reset_index()
-                ibnr_summary.rename(columns={'value': 'Total_IBNR'}, inplace=True)
-                
-                ultimate_summary = ultimate.groupby(index_cols)['value'].sum().reset_index()
-                ultimate_summary.rename(columns={'value': 'Total_Ultimate'}, inplace=True)
-
+            ibnr_summary = ibnr_df.groupby(index_cols)[value_column_name].sum().reset_index()
+            ultimate_summary = ultimate_df.groupby(index_cols)[value_column_name].sum().reset_index()
+        
+        # Rename the value column to the original column name if single, otherwise keep as is
+        if len(value_cols) == 1:
+            ibnr_summary.rename(columns={value_column_name: value_cols[0]}, inplace=True)
+            ultimate_summary.rename(columns={value_column_name: value_cols[0]}, inplace=True)
+        else:
+            ibnr_summary.rename(columns={value_column_name: 'IBNR_Total'}, inplace=True)
+            ultimate_summary.rename(columns={value_column_name: 'Ultimate_Total'}, inplace=True)
+        
+        # Get LDFs and completed triangle
+        ldfs_df = model.ldf_.to_frame()
+        completed_df = model.full_triangle_.to_frame()
+        
         # Display results
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
@@ -496,16 +473,16 @@ if uploaded_file is not None:
         
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
-        st.dataframe(ldfs, use_container_width=True)
+        st.dataframe(ldfs_df, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
+        
         # Export
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             ultimate_summary.to_excel(writer, index=False, sheet_name='Ultimate_Summary')
-            ldfs.to_excel(writer, sheet_name='LDFs')
-            completed.to_excel(writer, sheet_name='Completed_Triangle')
+            ldfs_df.to_excel(writer, sheet_name='LDFs')
+            completed_df.to_excel(writer, sheet_name='Completed_Triangle')
         
         output.seek(0)
         
@@ -517,6 +494,7 @@ if uploaded_file is not None:
         
     except Exception as e:
         st.error(f"Error: {str(e)}")
+        st.write("Please check your file format and column selections.")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
