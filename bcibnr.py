@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 4.0 - Fixed multiple column selection and correct IBNR calculation
+Version: 5.0 - Fixed Chainladder output handling
 """
 
 import streamlit as st
@@ -70,11 +70,6 @@ st.markdown("""
         font-size: 1.1rem;
         font-weight: bold;
     }
-    .required-container p, .grouping-container p, .date-range-container p, .grain-container p {
-        color: #666666;
-        font-size: 0.8rem;
-        margin-bottom: 0;
-    }
     .card {
         background-color: #F9F9F9;
         border: 1px solid #D4AF37;
@@ -113,7 +108,6 @@ st.markdown("""
     }
     .dataframe { border: 1px solid #D4AF37; border-radius: 8px; overflow: hidden; }
     .data-check-container { background-color: #E3F2FD; border: 2px solid #2196F3; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
-    .data-check-warning { background-color: #FFF3E0; border: 2px solid #FF9800; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
     .data-check-error { background-color: #FFEBEE; border: 2px solid #F44336; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
     .stSelectbox div[data-baseweb="select"] { width: 100%; }
 </style>
@@ -241,23 +235,22 @@ if uploaded_file is not None:
         st.markdown("---")
 
         st.markdown("""
-        <div class="grouping-container">
-            <h3>📊 Grouping Columns</h3>
-            <p>Select columns to group by (e.g., Line_of_Business)</p>
+        <div class="required-container">
+            <h3>📊 Grouping Column</h3>
+            <p>Select column to group by (e.g., Line_of_Business)</p>
         </div>
         """, unsafe_allow_html=True)
         
         group_options = [c for c in all_cols if c not in [loss_col, report_col]]
-        index_cols = st.multiselect("Group by:", options=group_options)
-        if not index_cols:
-            st.error("Select at least one grouping column.")
+        group_col = st.selectbox("Group by column:", options=[""] + group_options, label_visibility="collapsed")
+        if not group_col:
+            st.error("Select a grouping column.")
             st.stop()
 
         st.markdown("---")
         st.markdown("### Select Numeric Columns (Claim Amounts)")
-        num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
+        num_options = [c for c in all_cols if c not in [loss_col, report_col, group_col]]
         
-        # Allow multiple selection
         value_cols = st.multiselect("Numeric columns:", options=num_options)
         
         if not value_cols:
@@ -284,7 +277,7 @@ if uploaded_file is not None:
         
         # Check missing values
         missing = []
-        for col in [loss_col, report_col] + index_cols + value_cols:
+        for col in [loss_col, report_col, group_col] + value_cols:
             cnt = df_filtered[col].isna().sum()
             if cnt > 0:
                 missing.append(f"{col} ({cnt})")
@@ -323,8 +316,8 @@ if uploaded_file is not None:
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE FOR EACH NUMERIC COLUMN ---
-        all_results = []
+        # --- CREATE TRIANGLE AND CALCULATE IBNR ---
+        all_ibnr_results = []
         
         for claim_col in value_cols:
             st.write(f"**Processing: {claim_col}**")
@@ -336,7 +329,7 @@ if uploaded_file is not None:
                     origin=loss_col,
                     development=report_col,
                     columns=claim_col,
-                    index=index_cols[0] if len(index_cols) == 1 else index_cols,
+                    index=group_col,
                     cumulative=False,
                     grain=grain
                 )
@@ -344,49 +337,36 @@ if uploaded_file is not None:
                 # Fit model
                 model = cl.Chainladder().fit(triangle)
                 
-                # Get ultimate values (cumulative triangle)
-                ultimate = model.ultimate_
-                
-                # Get latest diagonal (current paid to date)
-                latest = triangle.latest_diagonal
-                
-                # Calculate IBNR = Ultimate - Latest
-                ibnr = ultimate - latest
+                # IBNR is directly available from model
+                ibnr_result = model.ibnr_
                 
                 # Convert to DataFrame
-                ibnr_df = ibnr.to_frame().reset_index()
-                ultimate_df = ultimate.to_frame().reset_index()
+                ibnr_df = ibnr_result.to_frame().reset_index()
                 
-                # Get the column name for grouping (LOB)
-                group_col = index_cols[0] if len(index_cols) == 1 else 'index'
+                # The output has columns: [group_col, 'origin', 'values']
+                # Sum by group_col to get total IBNR per line of business
+                ibnr_summary = ibnr_df.groupby(group_col)['values'].sum().reset_index()
+                ibnr_summary.columns = [group_col, claim_col]
                 
-                # Sum IBNR by LOB
-                if group_col in ibnr_df.columns:
-                    ibnr_summary = ibnr_df.groupby(group_col)['values'].sum().reset_index()
-                    ibnr_summary.columns = [group_col, f'IBNR_{claim_col}']
-                else:
-                    # If no grouping, just total
-                    ibnr_summary = pd.DataFrame({group_col: ['Total'], f'IBNR_{claim_col}': [ibnr_df['values'].sum()]})
+                all_ibnr_results.append(ibnr_summary)
                 
-                all_results.append(ibnr_summary)
-                
-                # Store individual results for display
+                # Store first model for LDFs and triangle display
                 if claim_col == value_cols[0]:
-                    first_ultimate = ultimate_df
+                    first_model = model
                     first_ibnr_detail = ibnr_df
         
         # Combine results from all numeric columns
         if len(value_cols) > 1:
-            combined_results = all_results[0]
-            for res in all_results[1:]:
-                combined_results = combined_results.merge(res, on=group_col, how='outer')
+            final_results = all_ibnr_results[0]
+            for res in all_ibnr_results[1:]:
+                final_results = final_results.merge(res, on=group_col, how='outer')
         else:
-            combined_results = all_results[0]
+            final_results = all_ibnr_results[0]
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
+        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {group_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display IBNR summary
@@ -394,7 +374,7 @@ if uploaded_file is not None:
         st.subheader("IBNR Summary by Line of Business")
         
         # Format currency
-        display_summary = combined_results.copy()
+        display_summary = final_results.copy()
         for col in display_summary.columns:
             if col != group_col:
                 display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "N/A")
@@ -406,31 +386,31 @@ if uploaded_file is not None:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Detailed IBNR by Accident Year")
         
-        # Format first_ibnr_detail for display
         if 'first_ibnr_detail' in locals():
             detail_display = first_ibnr_detail.copy()
-            if 'values' in detail_display.columns:
-                detail_display['IBNR'] = detail_display['values'].apply(lambda x: f"{x:,.2f}")
-                detail_display = detail_display.drop(columns=['values'])
+            detail_display['IBNR'] = detail_display['values'].apply(lambda x: f"{x:,.2f}")
+            detail_display = detail_display.drop(columns=['values'])
             st.dataframe(detail_display, use_container_width=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display LDFs
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Loss Development Factors")
-        ldfs_df = model.ldf_.to_frame()
-        st.dataframe(ldfs_df, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        if 'first_model' in locals():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.subheader("Loss Development Factors")
+            ldfs_df = first_model.ldf_.to_frame()
+            st.dataframe(ldfs_df, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         
         # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            combined_results.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            final_results.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             if 'first_ibnr_detail' in locals():
                 first_ibnr_detail.to_excel(writer, index=False, sheet_name='IBNR_Detailed')
-            ldfs_df.to_excel(writer, sheet_name='LDFs')
-            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
+            if 'first_model' in locals():
+                first_model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
+                first_model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
         
         output.seek(0)
         
