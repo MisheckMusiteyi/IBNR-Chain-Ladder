@@ -5,13 +5,13 @@ import numpy as np
 import chainladder as cl
 from io import BytesIO
 from datetime import date
+import re
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
-# ---------- CUSTOM CSS (African Actuarial Consultants theme) ----------
+# ---------- CUSTOM CSS ----------
 st.markdown("""
 <style>
-    /* Global */
     .stApp {
         background-color: #FFFFFF;
         color: #000000;
@@ -19,7 +19,6 @@ st.markdown("""
         font-size: 11pt;
     }
     
-    /* Apply Calisto MT to all text elements */
     body, p, h1, h2, h3, h4, h5, h6, div, span, label, .stMarkdown, 
     .stTextInput label, .stDateInput label, .stSelectbox label, .stMultiSelect label,
     .stButton button, .stDownloadButton button, .stFileUploader label,
@@ -28,7 +27,6 @@ st.markdown("""
         font-family: 'Calisto MT', serif !important;
     }
     
-    /* Header / Navigation */
     .header {
         background-color: #000000;
         padding: 1rem 2rem;
@@ -43,13 +41,11 @@ st.markdown("""
         text-decoration: none;
         font-weight: 500;
         transition: color 0.3s;
-        font-family: 'Calisto MT', serif;
     }
     .nav-links a:hover {
         color: #D4AF37;
     }
     
-    /* Hero Section */
     .hero {
         background: linear-gradient(135deg, #000000 0%, #333333 100%);
         color: #FFFFFF;
@@ -61,23 +57,19 @@ st.markdown("""
         color: #D4AF37;
         font-size: 2.5rem;
         margin-bottom: 0.5rem;
-        font-family: 'Calisto MT', serif;
     }
     .hero p {
         font-size: 1.2rem;
         max-width: 800px;
         margin: 0 auto;
-        font-family: 'Calisto MT', serif;
     }
     
-    /* Main container */
     .main-container {
         max-width: 1400px;
         margin: 2rem auto;
         padding: 0 2rem;
     }
     
-    /* Required Column Containers */
     .required-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -104,7 +96,21 @@ st.markdown("""
         line-height: 1.3;
     }
     
-    /* Date Range Container */
+    .grouping-container {
+        background-color: #F9F9F9;
+        border: 2px solid #D4AF37;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .grouping-container h3 {
+        color: #D4AF37;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
     .date-range-container {
         background-color: #F9F9F9;
         border: 2px solid #D4AF37;
@@ -120,13 +126,23 @@ st.markdown("""
         font-size: 1.2rem;
         font-weight: bold;
     }
-    .date-range-container p {
-        color: #666666;
-        font-size: 0.85rem;
-        margin-bottom: 0;
+    
+    .grain-container {
+        background-color: #F9F9F9;
+        border: 2px solid #D4AF37;
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .grain-container h3 {
+        color: #D4AF37;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        font-weight: bold;
     }
     
-    /* Cards */
     .card {
         background-color: #F9F9F9;
         border: 1px solid #D4AF37;
@@ -140,10 +156,8 @@ st.markdown("""
         margin-top: 0;
         border-bottom: 2px solid #D4AF37;
         padding-bottom: 0.5rem;
-        font-family: 'Calisto MT', serif;
     }
     
-    /* Footer */
     .footer {
         background-color: #000000;
         color: #FFFFFF;
@@ -155,10 +169,8 @@ st.markdown("""
     .footer a {
         color: #D4AF37;
         text-decoration: none;
-        font-family: 'Calisto MT', serif;
     }
     
-    /* Streamlit element overrides */
     .stButton > button, .stDownloadButton > button {
         background-color: #D4AF37;
         color: #000000;
@@ -167,7 +179,6 @@ st.markdown("""
         font-weight: bold;
         padding: 0.5rem 1rem;
         transition: all 0.3s;
-        font-family: 'Calisto MT', serif !important;
     }
     .stButton > button:hover, .stDownloadButton > button:hover {
         background-color: #B8960F;
@@ -192,7 +203,14 @@ st.markdown("""
         overflow: hidden;
     }
     
-    /* Fix for select box container */
+    .data-check-error {
+        background-color: #FFEBEE;
+        border: 2px solid #F44336;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
     .stSelectbox div[data-baseweb="select"] {
         width: 100%;
     }
@@ -215,14 +233,13 @@ st.markdown("""
 st.markdown("""
 <div class="hero">
     <h1>Chain Ladder IBNR Calculator</h1>
-    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period (date range), and choose the currency columns. The app computes IBNR and Ultimate claims by product using the Chain Ladder method.</p>
+    <p>Upload your claims data (CSV or Excel). Map your columns, select the IBNR period, choose grain, and select value columns.</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ---------- Main Container ----------
 st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
-# --- User inputs ---
 col1, col2 = st.columns(2)
 with col1:
     client_name = st.text_input("Client Name (for file name)", value="Client").strip()
@@ -233,30 +250,41 @@ with col2:
 st.markdown("""
 <div class="date-range-container">
     <h3>📅 IBNR Period</h3>
-    <p>Select the date range for claims to be included in the IBNR calculation (based on Loss Date)</p>
+    <p>Select the date range for claims to be included (based on Loss Date)</p>
 </div>
 """, unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
-    from_date = st.date_input("From Date (Start of IBNR Period)", value=date(2020, 1, 1))
-    st.caption("Claims with Loss Date on or after this date")
+    from_date = st.date_input("From Date", value=date(2020, 1, 1))
 with col2:
-    to_date = st.date_input("To Date (End of IBNR Period)", value=date(2024, 12, 31))
-    st.caption("Claims with Loss Date on or before this date")
+    to_date = st.date_input("To Date", value=date(2024, 12, 31))
 
 from_date = pd.to_datetime(from_date)
 to_date = pd.to_datetime(to_date)
 
-# Display selected period summary
 st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
+
+# --- Grain Selection ---
+st.markdown("""
+<div class="grain-container">
+    <h3>📊 Triangle Grain</h3>
+    <p>Select the time unit for grouping origin and development periods</p>
+</div>
+""", unsafe_allow_html=True)
+
+grain_options = {'Yearly': 'Y', 'Quarterly': 'Q', 'Monthly': 'M'}
+selected_grain_label = st.selectbox("Select Grain:", options=list(grain_options.keys()), index=0)
+selected_grain = grain_options[selected_grain_label]
 
 # File uploader
 uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
 
 if uploaded_file is not None:
     try:
-        # Read file based on extension
+        original_filename = uploaded_file.name
+        base_filename = re.sub(r'\.[^.]*$', '', original_filename)
+
         file_extension = uploaded_file.name.split('.')[-1].lower()
         
         if file_extension == 'csv':
@@ -269,246 +297,248 @@ if uploaded_file is not None:
         else:
             df = pd.read_excel(uploaded_file)
 
-        # Drop unnamed columns
         unnamed = [c for c in df.columns if c.startswith('Unnamed:')]
         if unnamed:
             df = df.drop(columns=unnamed)
             st.info(f"Dropped {len(unnamed)} unnamed column(s).")
 
-        # Preview
         st.markdown("#### Preview of uploaded data")
         st.dataframe(df.head())
         st.markdown("---")
 
-        # --- Column Mapping Section ---
+        # ============================================================
+        # COLUMN MAPPING - USER SELECTS EVERYTHING
+        # ============================================================
         st.markdown("### Map Your Columns to Required Fields")
-        st.markdown("The calculator requires the following columns. For each required column, select the corresponding column from your uploaded data:")
-
-        # Get all column names for selection
+        
         all_columns = df.columns.tolist()
         
-        # Create three columns for the required mappings
-        req_col1, req_col2, req_col3 = st.columns(3)
+        # Display available columns for debugging
+        with st.expander("View available column names in your file"):
+            st.write(all_columns)
         
-        with req_col1:
-            st.markdown("""
-            <div class="required-container">
-                <h3>Loss_Date</h3>
-                <p>The date when the loss occurred (origin period)</p>
-            </div>
-            """, unsafe_allow_html=True)
-            loss_date_col = st.selectbox(
-                "Select your Loss Date column",
-                options=[""] + all_columns,
-                key="loss_date",
-                label_visibility="collapsed"
-            )
-            if loss_date_col == "":
-                loss_date_col = None
+        # Loss Date column
+        loss_col = st.selectbox("Select your Loss Date column", options=[""] + all_columns, key="loss_date")
+        if loss_col == "":
+            st.error("Please select a Loss Date column.")
+            st.stop()
         
-        with req_col2:
-            st.markdown("""
-            <div class="required-container">
-                <h3>Report_Date</h3>
-                <p>The date when the claim was reported (development period)</p>
-            </div>
-            """, unsafe_allow_html=True)
-            report_date_col = st.selectbox(
-                "Select your Report Date column",
-                options=[""] + all_columns,
-                key="report_date",
-                label_visibility="collapsed"
-            )
-            if report_date_col == "":
-                report_date_col = None
+        # Report Date column
+        report_col = st.selectbox("Select your Report Date column", options=[""] + all_columns, key="report_date")
+        if report_col == "":
+            st.error("Please select a Report Date column.")
+            st.stop()
         
-        with req_col3:
-            st.markdown("""
-            <div class="required-container">
-                <h3>Line_of_Business</h3>
-                <p>The category/segment for grouping results (e.g., Motor, Property, Agriculture)</p>
-            </div>
-            """, unsafe_allow_html=True)
-            lob_col = st.selectbox(
-                "Select your Line of Business column",
-                options=[""] + all_columns,
-                key="lob",
-                label_visibility="collapsed"
-            )
-            if lob_col == "":
-                lob_col = None
-
         st.markdown("---")
-
-        # Validate required mappings
-        if not loss_date_col or not report_date_col or not lob_col:
-            st.error("Please map all required columns (Loss_Date, Report_Date, Line_of_Business).")
-            st.stop()
-
-        # --- Identify numeric columns for selection ---
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        # Remove the mapped columns if they appear in numeric columns
-        exclude_cols = [loss_date_col, report_date_col, lob_col]
-        for col in exclude_cols:
-            if col in numeric_cols:
-                numeric_cols.remove(col)
-
-        if not numeric_cols:
-            st.error("No numeric columns found in the data. Please ensure you have numeric columns for claim amounts.")
-            st.stop()
-
-        # Multi-select for currency columns
-        st.markdown("### Select Currency Columns (Claim Amounts)")
-        selected_columns = st.multiselect(
-            "Choose the columns that contain claim amounts (these will be used as 'columns' in the triangle):",
-            options=numeric_cols,
-            default=numeric_cols[:min(3, len(numeric_cols))]
+        # Index/Grouping columns
+        st.markdown("### Select Index/Grouping Columns")
+        grouping_options = [col for col in all_columns if col not in [loss_col, report_col]]
+        index_cols = st.multiselect(
+            "Choose columns to group by (at least one required):",
+            options=grouping_options,
+            default=[]
         )
-
-        if not selected_columns:
-            st.warning("Please select at least one currency column to proceed.")
+        
+        if not index_cols:
+            st.error("Please select at least one grouping column.")
             st.stop()
-
-        # --- CREATE CLEAN DATAFRAME WITH ONLY NEEDED COLUMNS ---
-        # Step 1: Extract the required date and LOB columns
-        df_clean = pd.DataFrame()
-        df_clean['Loss_Date'] = pd.to_datetime(df[loss_date_col], errors='coerce')
-        df_clean['Report_Date'] = pd.to_datetime(df[report_date_col], errors='coerce')
-        df_clean['Line_of_Business'] = df[lob_col]
         
-        # Step 2: Add the selected numeric columns
-        for col in selected_columns:
-            df_clean[col] = pd.to_numeric(df[col], errors='coerce')
+        st.markdown("---")
         
-        # Step 3: Drop any rows with missing critical data
-        df_clean = df_clean.dropna(subset=['Loss_Date', 'Report_Date', 'Line_of_Business'])
+        # Numeric columns
+        st.markdown("### Select Numeric Columns (Claim Amounts)")
+        numeric_options = [col for col in all_columns if col not in [loss_col, report_col] + index_cols]
         
-        if df_clean.empty:
-            st.error("No valid data found after cleaning. Please check your date columns.")
+        if not numeric_options:
+            st.error("No numeric columns available. Please check your data.")
             st.stop()
-
-        # --- Filter data by IBNR period (date range) ---
-        df_filtered = df_clean[
-            (df_clean['Loss_Date'] >= from_date) & 
-            (df_clean['Loss_Date'] <= to_date)
+        
+        selected_value_cols = st.multiselect(
+            "Choose the numeric columns (claim amounts) to analyze:",
+            options=numeric_options,
+            default=[]
+        )
+        
+        if not selected_value_cols:
+            st.warning("Please select at least one numeric column.")
+            st.stop()
+        
+        # ============================================================
+        # DATA CLEANING AND CHECKS
+        # ============================================================
+        st.markdown("### Data Quality Checks")
+        
+        # Convert dates
+        df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
+        df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
+        
+        # Check for missing values
+        missing_cols = []
+        for col in [loss_col, report_col] + index_cols + selected_value_cols:
+            if df[col].isna().any():
+                missing_cols.append(col)
+        
+        if missing_cols:
+            st.markdown(f"""
+            <div class="data-check-error">
+                <b>❌ Missing values found in columns:</b> {', '.join(missing_cols)}<br>
+                Please fix missing values and re-upload.
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+        
+        # Check date reasonability
+        invalid_dates = df[df[report_col] < df[loss_col]]
+        if len(invalid_dates) > 0:
+            st.markdown(f"""
+            <div class="data-check-error">
+                <b>❌ Found {len(invalid_dates)} rows where Report_Date is before Loss_Date.</b><br>
+                Please fix these dates and re-upload.
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+        
+        # Remove duplicates
+        duplicate_count = df.duplicated().sum()
+        if duplicate_count > 0:
+            df = df.drop_duplicates()
+            st.info(f"✅ Removed {duplicate_count} duplicate rows.")
+        
+        st.success("✅ All data quality checks passed!")
+        st.markdown("---")
+        
+        # ============================================================
+        # FILTER BY DATE RANGE
+        # ============================================================
+        df_filtered = df[
+            (df[loss_col] >= from_date) & 
+            (df[loss_col] <= to_date)
         ]
         
         if df_filtered.empty:
-            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
+            st.error("No data found for selected period.")
             st.stop()
         
-        st.success(f"**IBNR Period Filter Applied:** {len(df_filtered)} claims selected (from {len(df_clean)} total)")
-
-        # Show data summary before triangle creation
-        with st.expander("View Data Summary Before Triangle Creation"):
-            st.write(f"**Number of rows after filtering:** {len(df_filtered)}")
-            st.write(f"**Unique Lines of Business:** {df_filtered['Line_of_Business'].nunique()}")
-            st.write(f"**Date range in filtered data:** {df_filtered['Loss_Date'].min()} to {df_filtered['Loss_Date'].max()}")
-            st.write(f"**Selected columns:** {selected_columns}")
-            
-            # Show sample of the data
-            st.write("**Sample of filtered data (first 10 rows):**")
-            st.dataframe(df_filtered.head(10))
-
-        # --- Create Triangle ---
+        st.success(f"**Filtered:** {len(df_filtered)} claims selected")
+        
+        # ============================================================
+        # PREPARE DATA FOR TRIANGLE - USE ORIGINAL COLUMN NAMES
+        # ============================================================
+        # Create a copy with the columns needed for triangle
+        # We keep the original column names as selected by the user
+        triangle_df = df_filtered[[loss_col, report_col] + index_cols + selected_value_cols].copy()
+        
+        # ============================================================
+        # CREATE TRIANGLE
+        # ============================================================
         try:
             triangle = cl.Triangle(
-                data=df_filtered,
-                origin='Loss_Date',
-                development='Report_Date',
-                columns=selected_columns,
-                index='Line_of_Business',
-                cumulative=False
+                data=triangle_df,
+                origin=loss_col,
+                development=report_col,
+                columns=selected_value_cols,
+                index=index_cols,
+                cumulative=False,
+                grain=selected_grain
             )
-            st.success("Triangle created successfully!")
-            
+            st.success(f"Triangle created! Grain: {selected_grain_label}")
         except Exception as e:
-            st.error(f"Error creating triangle: {str(e)}")
+            st.error(f"Triangle error: {str(e)}")
             st.stop()
-
-        # --- Fit Chain Ladder model ---
+        
+        # ============================================================
+        # FIT MODEL
+        # ============================================================
         try:
             model = cl.Chainladder().fit(triangle)
-            st.success("Chain Ladder model fitted successfully!")
+            st.success("Model fitted successfully!")
         except Exception as e:
-            st.error(f"Error fitting Chain Ladder model: {e}")
+            st.error(f"Model error: {str(e)}")
             st.stop()
-
-        # Extract IBNR and Ultimate
+        
+        # ============================================================
+        # EXTRACT RESULTS
+        # ============================================================
         ibnr = model.ibnr_
         ultimate = model.ultimate_
-
-        # Convert to DataFrame and group by Line_of_Business
-        ibnr_df = ibnr.to_frame()
-        ultimate_df = ultimate.to_frame()
-
-        ibnr_reset = ibnr_df.reset_index()
-        ultimate_reset = ultimate_df.reset_index()
-
-        ibnr_summary = ibnr_reset.groupby('Line_of_Business')[selected_columns].sum().reset_index()
-        ultimate_summary = ultimate_reset.groupby('Line_of_Business')[selected_columns].sum().reset_index()
-
-        # Display results with period label
+        ldfs = model.ldf_
+        completed_triangle = model.full_triangle_
+        
+        # Convert to DataFrames
+        ibnr_df = ibnr.to_frame().reset_index()
+        ultimate_df = ultimate.to_frame().reset_index()
+        ldfs_df = ldfs.to_frame()
+        completed_df = completed_triangle.to_frame()
+        
+        # Aggregate by index columns
+        ibnr_summary = ibnr_df.groupby(index_cols)[selected_value_cols].sum().reset_index()
+        ultimate_summary = ultimate_df.groupby(index_cols)[selected_value_cols].sum().reset_index()
+        
+        # ============================================================
+        # DISPLAY RESULTS
+        # ============================================================
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
+        st.subheader(f"IBNR Results: {from_date.date()} to {to_date.date()}")
+        st.markdown(f"**Grain:** {selected_grain_label} | **Grouped by:** {', '.join(index_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
-
+        
         col1, col2 = st.columns(2)
         with col1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR by Line of Business")
-            st.dataframe(ibnr_summary, use_container_width=True)
+            st.subheader("IBNR Summary")
+            display_ibnr = ibnr_summary.copy()
+            for col in selected_value_cols:
+                display_ibnr[col] = display_ibnr[col].apply(lambda x: f"{x:,.2f}")
+            st.dataframe(display_ibnr, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
-
+        
         with col2:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("Ultimate Claims by Line of Business")
-            st.dataframe(ultimate_summary, use_container_width=True)
+            st.subheader("Ultimate Claims")
+            display_ultimate = ultimate_summary.copy()
+            for col in selected_value_cols:
+                display_ultimate[col] = display_ultimate[col].apply(lambda x: f"{x:,.2f}")
+            st.dataframe(display_ultimate, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
-
-        # Prepare Excel downloads
-        output_ibnr = BytesIO()
-        with pd.ExcelWriter(output_ibnr, engine='openpyxl') as writer:
-            ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR')
-        output_ibnr.seek(0)
-
-        output_ultimate = BytesIO()
-        with pd.ExcelWriter(output_ultimate, engine='openpyxl') as writer:
-            ultimate_summary.to_excel(writer, index=False, sheet_name='Ultimate')
-        output_ultimate.seek(0)
-
-        st.markdown("### Download Results")
-        dcol1, dcol2 = st.columns(2)
-        with dcol1:
-            safe_client = "".join(c for c in client_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            ibnr_filename = f"{safe_client}_IBNR_Summary_{from_date.year}_{to_date.year}.xlsx" if safe_client else f"IBNR_Summary_{from_date.year}_{to_date.year}.xlsx"
-            st.download_button(
-                label="Download IBNR Summary (Excel)",
-                data=output_ibnr,
-                file_name=ibnr_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        with dcol2:
-            safe_client = "".join(c for c in client_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            ultimate_filename = f"{safe_client}_Ultimate_Summary_{from_date.year}_{to_date.year}.xlsx" if safe_client else f"Ultimate_Summary_{from_date.year}_{to_date.year}.xlsx"
-            st.download_button(
-                label="Download Ultimate Summary (Excel)",
-                data=output_ultimate,
-                file_name=ultimate_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
+        
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("Loss Development Factors (LDFs)")
+        st.dataframe(ldfs_df, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # ============================================================
+        # EXPORT TO EXCEL
+        # ============================================================
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            ultimate_summary.to_excel(writer, index=False, sheet_name='Ultimate_Summary')
+            ldfs_df.to_excel(writer, sheet_name='LDFs')
+            completed_df.to_excel(writer, sheet_name='Completed_Triangle')
+        
+        output.seek(0)
+        
+        safe_client = re.sub(r'[\\/*?:"<>|]', "", client_name).strip() or "Client"
+        safe_original = re.sub(r'[\\/*?:"<>|]', "", base_filename).strip() or "Data"
+        file_name = f"{safe_client}_{safe_original}_IBNR_Results.xlsx"
+        
+        st.download_button(
+            label="Download Excel Report",
+            data=output,
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
+        st.error(f"An error occurred: {str(e)}")
         st.write("Please check your file format and column selections.")
 
-st.markdown('</div>', unsafe_allow_html=True)  # close main-container
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- Footer ----------
 st.markdown("""
 <div class="footer">
-    <p>© 2026 African Actuarial Consultants. All rights reserved. | <a href="#">Privacy</a> | <a href="#">Terms</a></p>
-    <p style="margin-top: 0.5rem; font-size: 0.9rem;">Powered by Vanababa</p>
+    <p>© 2026 African Actuarial Consultants. All rights reserved.</p>
 </div>
 """, unsafe_allow_html=True)
