@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,32 +9,86 @@ import re
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
-# Simplified header (no complex CSS for now)
+# ---------- CUSTOM CSS (minimal but functional) ----------
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #FFFFFF;
+        color: #000000;
+        font-family: 'Calisto MT', serif;
+        font-size: 11pt;
+    }
+    .stButton > button {
+        background-color: #D4AF37;
+        color: #000000;
+        border: none;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+    .stButton > button:hover {
+        background-color: #B8960F;
+        color: #FFFFFF;
+    }
+    .stFileUploader {
+        border: 2px dashed #D4AF37;
+        border-radius: 5px;
+        padding: 1rem;
+    }
+    .data-check-error {
+        background-color: #FFEBEE;
+        border: 2px solid #F44336;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .data-check-warning {
+        background-color: #FFF3E0;
+        border: 2px solid #FF9800;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .data-check-success {
+        background-color: #E8F5E9;
+        border: 2px solid #4CAF50;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Chain Ladder IBNR Calculator")
 st.markdown("Upload your claims data. Map your columns to the required fields.")
 
+# --- User inputs ---
 col1, col2 = st.columns(2)
 with col1:
     client_name = st.text_input("Client Name (for file name)", value="Client").strip()
 with col2:
     pass
 
-# Date range filter
+# --- IBNR Period ---
+st.subheader("IBNR Period")
 col1, col2 = st.columns(2)
 with col1:
-    from_date = st.date_input("From Date (Loss Date)", value=date(2020, 1, 1))
+    from_date = st.date_input("From Date", value=date(2020, 1, 1))
+    st.caption("Claims with Loss Date on or after this date")
 with col2:
-    to_date = st.date_input("To Date (Loss Date)", value=date(2024, 12, 31))
+    to_date = st.date_input("To Date", value=date(2024, 12, 31))
+    st.caption("Claims with Loss Date on or before this date")
 
 from_date = pd.to_datetime(from_date)
 to_date = pd.to_datetime(to_date)
+st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 
-# Grain selection
-grain_options = {'Yearly': 'Y', 'Quarterly': 'Q', 'Monthly': 'M'}
-selected_grain_label = st.selectbox("Triangle Grain:", options=list(grain_options.keys()), index=0)
-selected_grain = grain_options[selected_grain_label]
+# --- Grain Selection ---
+st.subheader("Triangle Grain")
+grain_map = {'Yearly': 'Y', 'Quarterly': 'Q', 'Monthly': 'M'}
+grain_label = st.selectbox("Select Grain:", options=list(grain_map.keys()), index=0)
+grain = grain_map[grain_label]
 
-# File uploader
+# --- File Upload ---
 uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
 
 if uploaded_file is not None:
@@ -42,179 +97,277 @@ if uploaded_file is not None:
         base_filename = re.sub(r'\.[^.]*$', '', original_filename)
 
         # Read file
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        if file_extension == 'csv':
+        ext = uploaded_file.name.split('.')[-1].lower()
+        if ext == 'csv':
             try:
                 df = pd.read_csv(uploaded_file, encoding='utf-8')
-            except UnicodeDecodeError:
+            except:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, encoding='cp1252')
+                st.info("File read with Windows-1252 encoding.")
         else:
             df = pd.read_excel(uploaded_file)
 
         # Drop unnamed columns
-        unnamed = [c for c in df.columns if c.startswith('Unnamed:')]
-        if unnamed:
-            df = df.drop(columns=unnamed)
+        df = df.drop(columns=[c for c in df.columns if c.startswith('Unnamed:')])
 
-        st.markdown("#### Preview of your data")
+        st.write("### Preview of your data")
         st.dataframe(df.head())
         st.markdown("---")
 
-        # ============================================================
-        # COLUMN MAPPING - USER SELECTS EVERYTHING
-        # ============================================================
-        st.markdown("### Map Your Columns")
-        st.markdown("Tell the app which column in your data represents each required field.")
+        # --- COLUMN MAPPING ---
+        st.write("### Map Your Columns")
+        st.write("Tell the app which column in your data represents each required field.")
 
-        all_columns = df.columns.tolist()
+        all_cols = df.columns.tolist()
         
-        # Show available columns
         with st.expander("Available columns in your file"):
-            st.write(all_columns)
+            st.write(all_cols)
 
-        # Loss Date column
-        loss_col = st.selectbox("Which column is your LOSS DATE?", options=[""] + all_columns)
+        loss_col = st.selectbox("Loss Date column (when the loss occurred)", options=[""] + all_cols)
         if not loss_col:
             st.error("Please select a Loss Date column.")
             st.stop()
 
-        # Report Date column
-        report_col = st.selectbox("Which column is your REPORT DATE?", options=[""] + all_columns)
+        report_col = st.selectbox("Report Date column (when the claim was reported)", options=[""] + all_cols)
         if not report_col:
             st.error("Please select a Report Date column.")
             st.stop()
 
         # Grouping columns
-        grouping_options = [col for col in all_columns if col not in [loss_col, report_col]]
-        index_cols = st.multiselect("Which columns do you want to GROUP BY? (e.g., Line of Business)", options=grouping_options)
-        
+        group_options = [c for c in all_cols if c not in [loss_col, report_col]]
+        index_cols = st.multiselect("Grouping columns (e.g., Line of Business)", options=group_options)
         if not index_cols:
             st.error("Please select at least one grouping column.")
             st.stop()
 
         # Numeric columns
-        numeric_options = [col for col in all_columns if col not in [loss_col, report_col] + index_cols]
-        selected_value_cols = st.multiselect("Which columns contain the CLAIM AMOUNTS?", options=numeric_options)
-        
-        if not selected_value_cols:
-            st.warning("Please select at least one numeric column.")
+        num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
+        value_cols = st.multiselect("Numeric columns (claim amounts)", options=num_options)
+        if not value_cols:
+            st.error("Please select at least one numeric column.")
             st.stop()
 
         st.markdown("---")
-        st.markdown("### Data Quality Checks")
 
         # ============================================================
-        # DATA CLEANING
+        # STEP 1: CONVERT DATES AND FILTER BY DATE RANGE FIRST
         # ============================================================
-        # Convert dates using the user's selected column names
+        st.write("### Data Processing")
+        
+        # Convert dates using the selected column names
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
-
-        # Check for missing values in selected columns
-        missing_found = False
-        for col in [loss_col, report_col] + index_cols + selected_value_cols:
-            missing = df[col].isna().sum()
-            if missing > 0:
-                st.warning(f"Column '{col}' has {missing} missing value(s).")
-                missing_found = True
         
-        if missing_found:
-            st.error("Please fix missing values and re-upload.")
-            st.stop()
-
-        # Check date reasonability
-        invalid = df[df[report_col] < df[loss_col]]
-        if len(invalid) > 0:
-            st.error(f"Found {len(invalid)} rows where Report Date is before Loss Date.")
-            st.stop()
-
-        # Remove duplicates
-        before = len(df)
-        df = df.drop_duplicates()
-        after = len(df)
-        if before != after:
-            st.info(f"Removed {before - after} duplicate rows.")
-
-        st.success("✅ All data quality checks passed!")
-
-        # ============================================================
-        # FILTER BY DATE RANGE
-        # ============================================================
-        df_filtered = df[(df[loss_col] >= from_date) & (df[loss_col] <= to_date)]
+        # Filter by the selected IBNR period (based on Loss Date)
+        df_filtered = df[
+            (df[loss_col] >= from_date) & 
+            (df[loss_col] <= to_date)
+        ].copy()
         
         if df_filtered.empty:
-            st.error("No data found for selected date range.")
+            st.error(f"No data found for the selected IBNR period: {from_date.date()} to {to_date.date()}")
             st.stop()
-
-        st.success(f"Selected {len(df_filtered)} claims for the period {from_date.date()} to {to_date.date()}")
-
+        
+        st.success(f"✅ Filtered to {len(df_filtered)} claims for the period {from_date.date()} to {to_date.date()}")
+        
         # ============================================================
-        # CREATE TRIANGLE - USING USER'S COLUMN NAMES DIRECTLY
+        # STEP 2: DATA QUALITY CHECKS ON FILTERED DATA
         # ============================================================
-        try:
-            triangle = cl.Triangle(
-                data=df_filtered,
-                origin=loss_col,           # User's loss date column name
-                development=report_col,     # User's report date column name
-                columns=selected_value_cols, # User's numeric column names
-                index=index_cols,           # User's grouping column names
-                cumulative=False,
-                grain=selected_grain
-            )
-            st.success(f"Triangle created! Grain: {selected_grain_label}")
-        except Exception as e:
-            st.error(f"Triangle creation error: {str(e)}")
+        st.write("### Data Quality Checks")
+        
+        errors_found = False
+        warnings_found = False
+        
+        # Check 1: Missing values in selected columns
+        st.write("**1. Missing Values Check**")
+        missing_cols = []
+        for col in [loss_col, report_col] + index_cols + value_cols:
+            missing_count = df_filtered[col].isna().sum()
+            if missing_count > 0:
+                missing_cols.append(f"{col} ({missing_count} missing)")
+                errors_found = True
+        
+        if missing_cols:
+            st.markdown(f"""
+            <div class="data-check-error">
+                <b>❌ Missing values found in:</b> {', '.join(missing_cols)}<br>
+                Please fix missing values and re-upload.
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="data-check-success">✅ No missing values found.</div>', unsafe_allow_html=True)
+        
+        # Check 2: Date reasonability (Report Date >= Loss Date)
+        st.write("**2. Date Reasonability Check**")
+        invalid_dates = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
+        if len(invalid_dates) > 0:
+            errors_found = True
+            st.markdown(f"""
+            <div class="data-check-error">
+                <b>❌ Found {len(invalid_dates)} rows where Report Date is before Loss Date.</b><br>
+                Please fix these dates and re-upload.
+            </div>
+            """, unsafe_allow_html=True)
+            with st.expander("View invalid rows (first 10)"):
+                st.dataframe(invalid_dates[[loss_col, report_col]].head(10))
+        else:
+            st.markdown('<div class="data-check-success">✅ All dates valid (Report Date >= Loss Date).</div>', unsafe_allow_html=True)
+        
+        # Check 3: Duplicate rows (only warn, don't stop)
+        st.write("**3. Duplicate Rows Check**")
+        duplicate_count = df_filtered.duplicated().sum()
+        if duplicate_count > 0:
+            warnings_found = True
+            st.markdown(f"""
+            <div class="data-check-warning">
+                <b>⚠️ Found {duplicate_count} duplicate rows.</b><br>
+                These will be removed automatically.
+            </div>
+            """, unsafe_allow_html=True)
+            df_filtered = df_filtered.drop_duplicates()
+            st.info(f"✅ Removed {duplicate_count} duplicate rows. {len(df_filtered)} rows remaining.")
+        else:
+            st.markdown('<div class="data-check-success">✅ No duplicate rows found.</div>', unsafe_allow_html=True)
+        
+        # Check 4: Non-numeric values in numeric columns
+        st.write("**4. Numeric Values Check**")
+        def clean_numeric(series):
+            if series.dtype == 'object':
+                cleaned = series.astype(str).str.replace(r'[$,€£]', '', regex=True)
+                cleaned = cleaned.str.replace(r',', '', regex=False)
+                cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
+                cleaned = cleaned.str.strip()
+                cleaned = cleaned.replace('', np.nan)
+                return pd.to_numeric(cleaned, errors='coerce')
+            else:
+                return pd.to_numeric(series, errors='coerce')
+        
+        numeric_issues = []
+        for col in value_cols:
+            test_clean = clean_numeric(df_filtered[col])
+            failed = test_clean.isna() & df_filtered[col].notna()
+            if failed.sum() > 0:
+                numeric_issues.append(f"{col} ({failed.sum()} non-numeric values)")
+                df_filtered[col] = clean_numeric(df_filtered[col]).fillna(0)
+                warnings_found = True
+        
+        if numeric_issues:
+            st.markdown(f"""
+            <div class="data-check-warning">
+                <b>⚠️ Non-numeric values found in:</b> {', '.join(numeric_issues)}<br>
+                These have been converted to 0.
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="data-check-success">✅ All numeric columns contain valid numbers.</div>', unsafe_allow_html=True)
+        
+        # Stop if critical errors found
+        if errors_found:
             st.stop()
-
+        
+        # Summary
+        st.markdown("---")
+        if warnings_found:
+            st.markdown('<div class="data-check-warning">⚠️ Data quality checks completed with warnings. Proceeding with calculation.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="data-check-success">✅ All data quality checks passed!</div>', unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
         # ============================================================
-        # FIT MODEL
+        # STEP 3: CREATE TRIANGLE AND RUN CHAIN LADDER
         # ============================================================
-        try:
-            model = cl.Chainladder().fit(triangle)
-            st.success("Model fitted successfully!")
-        except Exception as e:
-            st.error(f"Model error: {str(e)}")
-            st.stop()
-
-        # ============================================================
-        # RESULTS
-        # ============================================================
+        st.write("### Running Chain Ladder Calculation")
+        
+        # Prepare data for triangle (use filtered data with cleaned values)
+        triangle_df = df_filtered[[loss_col, report_col] + index_cols + value_cols].copy()
+        
+        # Create triangle
+        with st.spinner("Creating triangle..."):
+            try:
+                triangle = cl.Triangle(
+                    data=triangle_df,
+                    origin=loss_col,
+                    development=report_col,
+                    columns=value_cols,
+                    index=index_cols,
+                    cumulative=False,
+                    grain=grain
+                )
+                st.success(f"✅ Triangle created successfully! Grain: {grain_label}")
+            except Exception as e:
+                st.error(f"Triangle creation error: {str(e)}")
+                st.stop()
+        
+        # Fit Chain Ladder model
+        with st.spinner("Fitting Chain Ladder model..."):
+            try:
+                model = cl.Chainladder().fit(triangle)
+                st.success("✅ Chain Ladder model fitted successfully!")
+            except Exception as e:
+                st.error(f"Model fitting error: {str(e)}")
+                st.stop()
+        
+        # Extract results
         ibnr = model.ibnr_.to_frame().reset_index()
         ultimate = model.ultimate_.to_frame().reset_index()
         ldfs = model.ldf_.to_frame()
-        completed = model.full_triangle_.to_frame()
-
-        # Summarize by index columns
-        ibnr_summary = ibnr.groupby(index_cols)[selected_value_cols].sum().reset_index()
-        ultimate_summary = ultimate.groupby(index_cols)[selected_value_cols].sum().reset_index()
-
-        st.subheader("IBNR Summary")
-        st.dataframe(ibnr_summary)
-
-        st.subheader("Ultimate Claims Summary")
-        st.dataframe(ultimate_summary)
-
-        st.subheader("Loss Development Factors")
-        st.dataframe(ldfs)
-
+        completed_triangle = model.full_triangle_.to_frame()
+        
+        # Aggregate by index columns
+        ibnr_summary = ibnr.groupby(index_cols)[value_cols].sum().reset_index()
+        ultimate_summary = ultimate.groupby(index_cols)[value_cols].sum().reset_index()
+        
         # ============================================================
-        # EXPORT
+        # STEP 4: DISPLAY RESULTS
+        # ============================================================
+        st.write("### Results")
+        st.markdown(f"**Period:** {from_date.date()} to {to_date.date()} | **Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("IBNR Summary")
+            display_ibnr = ibnr_summary.copy()
+            for col in value_cols:
+                display_ibnr[col] = display_ibnr[col].apply(lambda x: f"{x:,.2f}")
+            st.dataframe(display_ibnr, use_container_width=True)
+        
+        with col2:
+            st.subheader("Ultimate Claims")
+            display_ultimate = ultimate_summary.copy()
+            for col in value_cols:
+                display_ultimate[col] = display_ultimate[col].apply(lambda x: f"{x:,.2f}")
+            st.dataframe(display_ultimate, use_container_width=True)
+        
+        st.subheader("Loss Development Factors (LDFs)")
+        st.dataframe(ldfs, use_container_width=True)
+        
+        # ============================================================
+        # STEP 5: EXPORT TO EXCEL
         # ============================================================
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             ultimate_summary.to_excel(writer, index=False, sheet_name='Ultimate_Summary')
             ldfs.to_excel(writer, sheet_name='LDFs')
-            completed.to_excel(writer, sheet_name='Completed_Triangle')
+            completed_triangle.to_excel(writer, sheet_name='Completed_Triangle')
         
         output.seek(0)
-
+        
         safe_client = re.sub(r'[\\/*?:"<>|]', "", client_name).strip() or "Client"
         safe_original = re.sub(r'[\\/*?:"<>|]', "", base_filename).strip() or "Data"
-        file_name = f"{safe_client}_{safe_original}_IBNR_Results.xlsx"
-
-        st.download_button("Download Excel Report", data=output, file_name=file_name)
-
+        file_name = f"{safe_client}_{safe_original}_IBNR_Results_{from_date.year}_{to_date.year}.xlsx"
+        
+        st.download_button(
+            label="📥 Download Excel Report",
+            data=output,
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"An error occurred: {str(e)}")
+
+st.markdown("---")
+st.markdown("© 2026 African Actuarial Consultants")
