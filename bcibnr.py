@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 22.0 - Fixed cumulative triangle access
+Version: 23.0 - Simplified, working with multiple columns
 """
 
 import streamlit as st
@@ -326,12 +326,11 @@ if uploaded_file is not None:
 
         # --- CREATE TRIANGLE WITH MULTIPLE COLUMNS ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
-            # When using multiple columns, chainladder returns a MultiIndex
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin=loss_col,
                 development=report_col,
-                columns=value_cols,  # Multiple columns
+                columns=value_cols,
                 index=index_cols if len(index_cols) > 1 else index_cols[0],
                 cumulative=False,
                 grain=grain
@@ -346,38 +345,13 @@ if uploaded_file is not None:
         # Convert to DataFrame - with multiple columns, it will have one column per value_col
         ibnr_df = ibnr.to_frame()
         
-        # The index has the grouping columns, the columns are the value_cols
         # Reset index to make grouping columns regular columns
         ibnr_df = ibnr_df.reset_index()
         
         # Now ibnr_df has: index_cols + value_cols
-        # This is already our summary! No need to group further
         ibnr_summary = ibnr_df.copy()
         
-        # --- FIX: Get cumulative triangles correctly ---
-        # For original cumulative triangle, we can compute it from the incremental triangle
-        # Get the incremental triangle as DataFrame
-        inc_df = triangle.to_frame()
-        
-        # Convert incremental to cumulative by grouping by the index levels and cumsum
-        # The index has levels: grouping columns + origin
-        inc_df_reset = inc_df.reset_index()
-        
-        # Get the origin column name (it's usually 'origin' or the column name)
-        origin_col = 'origin' if 'origin' in inc_df_reset.columns else inc_df_reset.columns[0]
-        
-        # Calculate cumulative sum by grouping columns (excluding origin)
-        group_cols = [c for c in index_cols if c in inc_df_reset.columns]
-        inc_df_reset['value'] = inc_df_reset['values'].fillna(0)
-        inc_df_reset['cumulative'] = inc_df_reset.groupby(group_cols)['value'].cumsum()
-        
-        # Pivot to get cumulative triangle format
-        original_cumulative = inc_df_reset.pivot_table(
-            index=group_cols + [origin_col],
-            columns='development',
-            values='cumulative'
-        ).fillna(0)
-        
+        # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
         st.markdown(f"**Grain:** {grain_label}")
@@ -404,7 +378,8 @@ if uploaded_file is not None:
         # Display LDFs
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
-        st.dataframe(model.ldf_.to_frame(), use_container_width=True)
+        ldfs_df = model.ldf_.to_frame()
+        st.dataframe(ldfs_df, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
         # --- EXPORT TO EXCEL ---
@@ -419,10 +394,7 @@ if uploaded_file is not None:
             # Sheet 3: LDFs
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Sheet 4: Original Incremental Triangle
-            triangle.to_frame().to_excel(writer, sheet_name='Incremental_Triangle_Original')
-            
-            # Sheet 5: Projected Cumulative Triangle
+            # Sheet 4: Projected Cumulative Triangle
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Cumulative')
         
         output.seek(0)
