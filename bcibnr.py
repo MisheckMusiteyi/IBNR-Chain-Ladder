@@ -392,7 +392,7 @@ if uploaded_file is not None:
         safe_original = re.sub(r'[\\/*?:"<>|]', "", base_filename).strip() or "Data"
         file_name = f"{safe_client}_{safe_original}_IBNR_Results_{from_date.year}_{to_date.year}.xlsx"
         
-        st.download_button("📥 Download Excel Report", data=output, file_name=file_name)
+        st.download_button("Download Excel Report", data=output, file_name=file_name)
         
     except Exception as e:
         st.error(f"Error: {str(e)}")
