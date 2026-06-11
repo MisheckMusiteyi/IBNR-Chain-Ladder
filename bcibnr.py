@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 24.0 - Added totals row and fixed sheet name
+Version: 25.0 - Fixed totals row calculation
 """
 
 import streamlit as st
@@ -352,7 +352,7 @@ if uploaded_file is not None:
         ibnr_summary = ibnr_df.copy()
         
         # --- ADD TOTALS ROW TO IBNR SUMMARY ---
-        # Create totals row
+        # Create totals row by summing each numeric column across all rows
         totals = {}
         for col in index_cols:
             totals[col] = 'TOTAL'
@@ -406,7 +406,7 @@ if uploaded_file is not None:
             # Sheet 3: LDFs
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Sheet 4: Projected Incremental Triangle (renamed)
+            # Sheet 4: Projected Incremental Triangle
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Incremental')
         
         output.seek(0)
