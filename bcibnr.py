@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 14.0 - Using your exact manual workflow
+Version: 15.0 - Fixed column naming for display
 """
 
 import streamlit as st
@@ -305,7 +305,7 @@ if uploaded_file is not None:
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE AND RUN CHAIN LADDER (EXACTLY LIKE YOUR MANUAL WORKFLOW) ---
+        # --- CREATE TRIANGLE AND RUN CHAIN LADDER ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
             triangle = cl.Triangle(
                 data=df_filtered,
@@ -321,29 +321,27 @@ if uploaded_file is not None:
             st.success("✅ Model fitted successfully!")
 
         # --- EXACTLY YOUR MANUAL WORKFLOW FOR IBNR ---
-        # Step 1: Get IBNR (like your ibnr = cl_model.ibnr_)
+        # Step 1: Get IBNR
         ibnr = model.ibnr_
         
-        # Step 2: Display IBNR by accident year (like your display(ibnr.to_frame()))
+        # Step 2: Convert to DataFrame
         ibnr_df = ibnr.to_frame()
         
-        # Step 3: Create summary by Line of Business (like your ibnr_df.sum(axis=1).to_frame(name=currency_columns[0]))
-        # currency_columns[0] is the user's selected amount column
+        # Step 3: Create summary by Line of Business (sum across rows)
         ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=amount_col)
         
-        # Reset index to make Line_of_Business a column
+        # Reset index and rename columns
         ibnr_summary_df = ibnr_summary_df.reset_index()
         ibnr_summary_df = ibnr_summary_df.rename(columns={'index': lob_col})
-
-
-        # Also reset index for detailed view
-        ibnr_detailed_df = ibnr_df.reset_index()
-        # Rename 'values' to the user's amount column name, and 'origin' to 'AccidentYear'
-        ibnr_detailed_df = ibnr_detailed_df.rename(columns={'values': amount_col, 'origin': 'AccidentYear', 'index': lob_col})
         
-        # Also reset index for detailed view
-        #ibnr_detailed_df = ibnr_df.reset_index()
-        #ibnr_detailed_df = ibnr_detailed_df.rename(columns={'index': lob_col, 'values': amount_col, 'origin': 'AccidentYear'})
+        # Step 4: Create detailed view by accident year
+        ibnr_detailed_df = ibnr_df.reset_index()
+        # IMPORTANT: Rename 'values' to the user's amount column name
+        ibnr_detailed_df = ibnr_detailed_df.rename(columns={
+            'values': amount_col, 
+            'origin': 'AccidentYear', 
+            'index': lob_col
+        })
 
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
