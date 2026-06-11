@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 19.0 - Fixed cumulative triangle display
+Version: 20.0 - Multiple numeric and multiple grouping columns
 """
 
 import streamlit as st
@@ -208,7 +208,8 @@ if uploaded_file is not None:
         st.markdown("### Map Your Columns")
         all_cols = df.columns.tolist()
 
-        col1, col2, col3 = st.columns(3)
+        # Loss Date and Report Date (single selection)
+        col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("""
@@ -227,31 +228,48 @@ if uploaded_file is not None:
             </div>
             """, unsafe_allow_html=True)
             report_col = st.selectbox("Report Date column", options=[""] + all_cols, label_visibility="collapsed")
-        
-        with col3:
-            st.markdown("""
-            <div class="required-container">
-                <h3>Line_of_Business</h3>
-                <p>Grouping column (e.g., Motor, Property, Health)</p>
-            </div>
-            """, unsafe_allow_html=True)
-            lob_col = st.selectbox("Line of Business column", options=[""] + all_cols, label_visibility="collapsed")
 
-        if not loss_col or not report_col or not lob_col:
-            st.error("Please select all required columns.")
+        if not loss_col or not report_col:
+            st.error("Please select Loss Date and Report Date columns.")
             st.stop()
 
         st.markdown("---")
-        st.markdown("### Select Claim Amount Column")
+
+        # Grouping Columns (Multiple selection)
+        st.markdown("""
+        <div class="grouping-container">
+            <h3>Grouping Columns</h3>
+            <p>Select columns to group by (e.g., Line_of_Business, Region, Product Type)</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        amount_options = [c for c in all_cols if c not in [loss_col, report_col, lob_col]]
-        amount_col = st.selectbox("Claim amount column:", options=[""] + amount_options, label_visibility="collapsed")
+        group_options = [c for c in all_cols if c not in [loss_col, report_col]]
+        index_cols = st.multiselect("Select grouping columns:", options=group_options)
         
-        if not amount_col:
-            st.error("Select a claim amount column.")
+        if not index_cols:
+            st.error("Please select at least one grouping column.")
             st.stop()
 
-        st.write(f"Selected claim amount column: **{amount_col}**")
+        st.markdown("---")
+
+        # Numeric Columns (Multiple selection)
+        st.markdown("### Select Numeric Columns (Claim Amounts)")
+        st.markdown("Select one or more columns that contain claim amounts to run Chain Ladder on each:")
+        
+        num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
+        
+        if not num_options:
+            st.error("No numeric columns found. Please ensure your file contains claim amount columns.")
+            st.stop()
+        
+        value_cols = st.multiselect("Select claim amount columns:", options=num_options)
+        
+        if not value_cols:
+            st.error("Please select at least one claim amount column.")
+            st.stop()
+
+        st.write(f"Selected grouping columns: **{', '.join(index_cols)}**")
+        st.write(f"Selected claim amount columns: **{', '.join(value_cols)}**")
 
         # --- PROCESS DATA ---
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
@@ -271,7 +289,7 @@ if uploaded_file is not None:
         
         # Check missing values
         missing = []
-        for col in [loss_col, report_col, lob_col, amount_col]:
+        for col in [loss_col, report_col] + index_cols + value_cols:
             cnt = df_filtered[col].isna().sum()
             if cnt > 0:
                 missing.append(f"{col} ({cnt})")
@@ -294,100 +312,109 @@ if uploaded_file is not None:
         else:
             st.markdown('<div class="data-check-container">✅ No duplicates found</div>', unsafe_allow_html=True)
         
-        # Clean numeric values
-        if df_filtered[amount_col].dtype == 'object':
-            cleaned = df_filtered[amount_col].astype(str).str.replace(r'[$,€£]', '', regex=True)
-            cleaned = cleaned.str.replace(r',', '', regex=False)
-            cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
-            cleaned = cleaned.str.strip().replace('', '0')
-            df_filtered[amount_col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
+        # Clean numeric values for all selected columns
+        for col in value_cols:
+            if df_filtered[col].dtype == 'object':
+                cleaned = df_filtered[col].astype(str).str.replace(r'[$,€£]', '', regex=True)
+                cleaned = cleaned.str.replace(r',', '', regex=False)
+                cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
+                cleaned = cleaned.str.strip().replace('', '0')
+                df_filtered[col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
         
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE AND RUN CHAIN LADDER ---
-        with st.spinner("Creating triangle and running Chain Ladder..."):
-            triangle = cl.Triangle(
-                data=df_filtered,
-                origin=loss_col,
-                development=report_col,
-                columns=amount_col,
-                index=lob_col,
-                cumulative=False,
-                grain=grain
-            )
+        # --- PROCESS EACH NUMERIC COLUMN SEPARATELY ---
+        all_ibnr_summaries = []
+        all_ibnr_detailed = []
+        
+        for amount_col in value_cols:
+            st.write(f"**Processing: {amount_col}**")
             
-            model = cl.Chainladder().fit(triangle)
-            st.success("✅ Model fitted successfully!")
-
-        # --- EXTRACT IBNR SUMMARY ---
-        ibnr = model.ibnr_
-        ibnr_df = ibnr.to_frame()
-        ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=amount_col)
-        ibnr_summary_df = ibnr_summary_df.reset_index()
-        ibnr_summary_df = ibnr_summary_df.rename(columns={'index': lob_col})
+            with st.spinner(f"Running Chain Ladder on {amount_col}..."):
+                # Create triangle
+                triangle = cl.Triangle(
+                    data=df_filtered,
+                    origin=loss_col,
+                    development=report_col,
+                    columns=amount_col,
+                    index=index_cols if len(index_cols) > 1 else index_cols[0],
+                    cumulative=False,
+                    grain=grain
+                )
+                
+                # Fit model
+                model = cl.Chainladder().fit(triangle)
+                
+                # Get IBNR
+                ibnr = model.ibnr_
+                ibnr_df = ibnr.to_frame()
+                
+                # Create summary by grouping columns (sum across accident years)
+                if len(index_cols) == 1:
+                    ibnr_summary = ibnr_df.groupby(index_cols[0])['values'].sum().reset_index()
+                    ibnr_summary.columns = [index_cols[0], amount_col]
+                else:
+                    # Multiple grouping columns - they are in the index
+                    ibnr_summary = ibnr_df.groupby(index_cols)['values'].sum().reset_index()
+                    ibnr_summary.rename(columns={'values': amount_col}, inplace=True)
+                
+                all_ibnr_summaries.append(ibnr_summary)
+                
+                # Store first model for additional outputs (LDFs, triangles)
+                if amount_col == value_cols[0]:
+                    first_model = model
+                    first_triangle = triangle
+        
+        # Combine all IBNR summaries
+        if len(value_cols) == 1:
+            combined_ibnr = all_ibnr_summaries[0]
+        else:
+            combined_ibnr = all_ibnr_summaries[0]
+            for summary in all_ibnr_summaries[1:]:
+                combined_ibnr = combined_ibnr.merge(summary, on=index_cols, how='outer')
 
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
         st.markdown(f"**Grain:** {grain_label}")
-        st.markdown(f"**Grouped by:** {lob_col}")
-        st.markdown(f"**Claim Amount Column:** {amount_col}")
+        st.markdown(f"**Grouped by:** {', '.join(index_cols)}")
+        st.markdown(f"**Claim Amount Columns:** {', '.join(value_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader(f"IBNR Summary by {lob_col}")
-        display_summary = ibnr_summary_df.copy()
-        display_summary[amount_col] = display_summary[amount_col].apply(lambda x: f"{x:,.2f}")
+        st.subheader(f"IBNR Summary by {', '.join(index_cols)}")
+        display_summary = combined_ibnr.copy()
+        for col in value_cols:
+            if col in display_summary.columns:
+                display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Ultimate Claims Triangle")
-        st.dataframe(model.ultimate_.to_frame(), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Loss Development Factors")
-        st.dataframe(model.ldf_.to_frame(), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Display Ultimate Triangle for first column
+        if 'first_model' in locals():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.subheader(f"Ultimate Claims Triangle ({value_cols[0]})")
+            st.dataframe(first_model.ultimate_.to_frame(), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.subheader("Loss Development Factors")
+            st.dataframe(first_model.ldf_.to_frame(), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- EXPORT TO EXCEL WITH PROPERLY NAMED SHEETS ---
+        # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             # Sheet 1: IBNR Summary
-            ibnr_summary_df.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            combined_ibnr.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             
-            # Sheet 2: Ultimate Triangle
-            model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
-            
-            # Sheet 3: Completed Cumulative Triangle (use triangle.cumulative_ for original cumulative)
-            original_cumulative = triangle.cumulative_.to_frame()
-            original_cumulative.to_excel(writer, sheet_name='Original_Triangle_Cumulative')
-            
-            # Sheet 4: Completed Projected Cumulative Triangle (from model)
-            projected_cumulative = model.full_triangle_.to_frame()
-            projected_cumulative.to_excel(writer, sheet_name='Projected_Triangle_Cumulative')
-            
-            # Sheet 5: Original Incremental Triangle (from your input data)
-            incremental_original = triangle.to_frame()
-            incremental_original.to_excel(writer, sheet_name='Incremental_Triangle_Original')
-            
-            # Sheet 6: Projected Incremental Triangle (converted from cumulative)
-            if hasattr(model.full_triangle_, 'incr_to_incremental'):
-                projected_incremental = model.full_triangle_.incr_to_incremental().to_frame()
-                projected_incremental.to_excel(writer, sheet_name='Incremental_Triangle_Projected')
-            else:
-                # Alternative: convert cumulative to incremental by subtracting previous period
-                cum_df = model.full_triangle_.to_frame()
-                inc_df = cum_df - cum_df.groupby(level=0).shift(1, fill_value=0)
-                inc_df.to_excel(writer, sheet_name='Incremental_Triangle_Projected')
-            
-            # Sheet 7: Loss Development Factors
-            model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
-            
-            # Sheet 8: IBNR Detailed by Origin
-            ibnr.to_frame().reset_index().to_excel(writer, index=False, sheet_name='IBNR_By_Origin')
+            # Sheet 2-4: Additional outputs from first model
+            if 'first_model' in locals():
+                first_model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
+                first_model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
+                first_triangle.cumulative_.to_frame().to_excel(writer, sheet_name='Original_Triangle_Cumulative')
+                first_model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Cumulative')
         
         output.seek(0)
         
