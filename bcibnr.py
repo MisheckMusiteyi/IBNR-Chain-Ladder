@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 35.0 - Fixed grouping for IBNR summary
+Version: 36.0 - Fixed IBNR summary to show all value columns
 """
 
 import streamlit as st
@@ -330,21 +330,28 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- EXTRACT IBNR SUMMARY (FIXED - group by line of business) ---
+        # --- EXTRACT IBNR SUMMARY (FIXED - use selected value columns) ---
         ibnr = model.ibnr_
         ibnr_df = ibnr.to_frame().reset_index()
         
         # Identify the grouping column (line of business)
         grouping_col = index_cols[0] if len(index_cols) == 1 else index_cols
         
-        # Get the numeric columns (the value columns)
-        # Exclude 'origin' and grouping columns
-        numeric_cols = [col for col in ibnr_df.columns 
-                       if col not in grouping_col and col != 'origin' 
-                       and ibnr_df[col].dtype in ['float64', 'int64']]
+        # The numeric columns are exactly the value_cols the user selected
+        # Find which columns in ibnr_df match our value_cols
+        available_numeric_cols = []
+        for col in value_cols:
+            if col in ibnr_df.columns:
+                available_numeric_cols.append(col)
+        
+        # If none found, try to get all numeric columns except grouping and origin
+        if not available_numeric_cols:
+            available_numeric_cols = [col for col in ibnr_df.columns 
+                                     if col not in grouping_col and col != 'origin' 
+                                     and ibnr_df[col].dtype in ['float64', 'int64']]
         
         # Group by the line of business and sum across all accident years
-        ibnr_summary_df = ibnr_df.groupby(grouping_col)[numeric_cols].sum().reset_index()
+        ibnr_summary_df = ibnr_df.groupby(grouping_col)[available_numeric_cols].sum().reset_index()
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
