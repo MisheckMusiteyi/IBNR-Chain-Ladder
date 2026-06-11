@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 11.0 - Fixed column naming
+Version: 12.0 - Using user-selected column names consistently
 """
 
 import streamlit as st
@@ -214,52 +214,51 @@ if uploaded_file is not None:
         st.markdown("### Map Your Columns")
         all_cols = df.columns.tolist()
 
-        st.markdown("""
-        <div class="required-container">
-            <h3>Loss_Date</h3>
-            <p>Date when loss occurred</p>
-        </div>
-        """, unsafe_allow_html=True)
-        loss_col = st.selectbox("Loss Date column", options=[""] + all_cols, label_visibility="collapsed")
-        if not loss_col:
-            st.stop()
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("""
+            <div class="required-container">
+                <h3>Loss_Date</h3>
+                <p>Date when loss occurred</p>
+            </div>
+            """, unsafe_allow_html=True)
+            loss_col = st.selectbox("Loss Date column", options=[""] + all_cols, label_visibility="collapsed")
+        
+        with col2:
+            st.markdown("""
+            <div class="required-container">
+                <h3>Report_Date</h3>
+                <p>Date when claim was reported</p>
+            </div>
+            """, unsafe_allow_html=True)
+            report_col = st.selectbox("Report Date column", options=[""] + all_cols, label_visibility="collapsed")
+        
+        with col3:
+            st.markdown("""
+            <div class="required-container">
+                <h3>Line_of_Business</h3>
+                <p>Grouping column (e.g., Motor, Property, Health)</p>
+            </div>
+            """, unsafe_allow_html=True)
+            lob_col = st.selectbox("Line of Business column", options=[""] + all_cols, label_visibility="collapsed")
 
-        st.markdown("""
-        <div class="required-container">
-            <h3>Report_Date</h3>
-            <p>Date when claim was reported</p>
-        </div>
-        """, unsafe_allow_html=True)
-        report_col = st.selectbox("Report Date column", options=[""] + all_cols, label_visibility="collapsed")
-        if not report_col:
+        if not loss_col or not report_col or not lob_col:
+            st.error("Please select all required columns.")
             st.stop()
 
         st.markdown("---")
-
-        st.markdown("""
-        <div class="grouping-container">
-            <h3>Index/Grouping Column</h3>
-            <p>Select the column to use as index (e.g., Line_of_Business)</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("### Select Claim Amount Column")
         
-        group_options = [c for c in all_cols if c not in [loss_col, report_col]]
-        index_col = st.selectbox("Index column:", options=[""] + group_options, label_visibility="collapsed")
-        if not index_col:
-            st.error("Select an index/grouping column.")
+        amount_options = [c for c in all_cols if c not in [loss_col, report_col, lob_col]]
+        amount_col = st.selectbox("Claim amount column:", options=[""] + amount_options, label_visibility="collapsed")
+        
+        if not amount_col:
+            st.error("Select a claim amount column.")
             st.stop()
 
-        st.markdown("---")
-        st.markdown("### Select Numeric Column (Claim Amount)")
-        num_options = [c for c in all_cols if c not in [loss_col, report_col, index_col]]
-        
-        value_col = st.selectbox("Numeric column (claim amount):", options=[""] + num_options, label_visibility="collapsed")
-        
-        if not value_col:
-            st.error("Select a numeric column.")
-            st.stop()
-
-        st.write(f"Selected numeric column: {value_col}")
+        st.write(f"Selected claim amount column: **{amount_col}**")
+        st.write(f"Selected Line of Business column: **{lob_col}**")
 
         # --- PROCESS DATA ---
         # Convert dates
@@ -280,7 +279,7 @@ if uploaded_file is not None:
         
         # Check missing values
         missing = []
-        for col in [loss_col, report_col, index_col, value_col]:
+        for col in [loss_col, report_col, lob_col, amount_col]:
             cnt = df_filtered[col].isna().sum()
             if cnt > 0:
                 missing.append(f"{col} ({cnt})")
@@ -304,12 +303,12 @@ if uploaded_file is not None:
             st.markdown('<div class="data-check-container">✅ No duplicates found</div>', unsafe_allow_html=True)
         
         # Clean numeric values
-        if df_filtered[value_col].dtype == 'object':
-            cleaned = df_filtered[value_col].astype(str).str.replace(r'[$,€£]', '', regex=True)
+        if df_filtered[amount_col].dtype == 'object':
+            cleaned = df_filtered[amount_col].astype(str).str.replace(r'[$,€£]', '', regex=True)
             cleaned = cleaned.str.replace(r',', '', regex=False)
             cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
             cleaned = cleaned.str.strip().replace('', '0')
-            df_filtered[value_col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
+            df_filtered[amount_col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
         
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
@@ -320,8 +319,8 @@ if uploaded_file is not None:
                 data=df_filtered,
                 origin=loss_col,
                 development=report_col,
-                columns=value_col,
-                index=index_col,
+                columns=amount_col,
+                index=lob_col,
                 cumulative=False,
                 grain=grain
             )
@@ -330,35 +329,40 @@ if uploaded_file is not None:
             st.success("✅ Model fitted successfully!")
 
         # --- EXACTLY YOUR MANUAL WORKFLOW FOR IBNR ---
-        # Step 1: Get IBNR (like your ibnr = cl_model.ibnr_)
+        # Step 1: Get IBNR
         ibnr = model.ibnr_
         
-        # Step 2: Convert to DataFrame (like your ibnr_df = ibnr.to_frame())
+        # Step 2: Convert to DataFrame
         ibnr_df = ibnr.to_frame()
         
         # Step 3: Sum across rows (axis=1) to get total by Line of Business
-        ibnr_summary = ibnr_df.sum(axis=1).to_frame(name=value_col)
+        # This creates a DataFrame with the user's amount column name
+        ibnr_summary = ibnr_df.sum(axis=1).to_frame(name=amount_col)
         
         # Reset index to make Line_of_Business a column
         ibnr_summary = ibnr_summary.reset_index()
         
-        # Also get detailed by accident year
+        # Rename the index column to the user's LOB column name
+        ibnr_summary = ibnr_summary.rename(columns={'index': lob_col})
+        
+        # Get detailed IBNR by accident year
         ibnr_detailed = ibnr_df.reset_index()
-        # Rename columns for clarity
-        ibnr_detailed = ibnr_detailed.rename(columns={'values': value_col, 'origin': 'AccidentYear'})
+        ibnr_detailed = ibnr_detailed.rename(columns={'values': amount_col, 'origin': 'AccidentYear'})
+        ibnr_detailed = ibnr_detailed.rename(columns={'index': lob_col})
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {index_col}")
-        st.markdown(f"**Claim Amount Column:** {value_col}")
+        st.markdown(f"**Grain:** {grain_label}")
+        st.markdown(f"**Grouped by:** {lob_col}")
+        st.markdown(f"**Claim Amount Column:** {amount_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display IBNR Summary
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("IBNR Summary by Line of Business")
+        st.subheader(f"IBNR Summary by {lob_col}")
         display_summary = ibnr_summary.copy()
-        display_summary[value_col] = display_summary[value_col].apply(lambda x: f"{x:,.2f}")
+        display_summary[amount_col] = display_summary[amount_col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -366,7 +370,7 @@ if uploaded_file is not None:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("IBNR by Accident Year")
         display_detailed = ibnr_detailed.copy()
-        display_detailed[value_col] = display_detailed[value_col].apply(lambda x: f"{x:,.2f}")
+        display_detailed[amount_col] = display_detailed[amount_col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_detailed, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
