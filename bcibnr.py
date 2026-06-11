@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 29.0 - Fixed column access
+Version: 30.0 - Fixed IBNR Summary to show totals per line of business
 """
 
 import streamlit as st
@@ -334,18 +334,26 @@ if uploaded_file is not None:
         ibnr = model.ibnr_
         
         # Convert to DataFrame and reset index
-        # This gives us: index_cols + value_cols (already summarized)
         ibnr_df = ibnr.to_frame().reset_index()
         
-        # Rename 'origin' to 'AccidentYear' if it exists (for detailed view)
+        # Rename 'origin' to 'AccidentYear' if it exists
         if 'origin' in ibnr_df.columns:
             ibnr_df = ibnr_df.rename(columns={'origin': 'AccidentYear'})
         
-        # The summary is already here - each row is a unique combination of index_cols
-        # No need to group further
-        ibnr_summary = ibnr_df.copy()
+        # Create IBNR Summary (Total per Line of Business)
+        # Sum across all accident year columns (the value columns are already the correct ones)
+        # The value columns are the ones the user selected (e.g., 'Claim_Amount')
+        # But actually, ibnr_df has the values in the value_cols columns, one per column
+        # For multiple value columns, we need to sum each one
         
-        # For detailed view by accident year, we already have it
+        if len(index_cols) == 1:
+            # Single grouping column (e.g., Line_of_Business)
+            ibnr_summary = ibnr_df.groupby(index_cols[0])[value_cols].sum().reset_index()
+        else:
+            # Multiple grouping columns
+            ibnr_summary = ibnr_df.groupby(index_cols)[value_cols].sum().reset_index()
+        
+        # Detailed by accident year (keep as is)
         ibnr_detailed = ibnr_df.copy()
 
         # --- DISPLAY RESULTS ---
@@ -357,14 +365,11 @@ if uploaded_file is not None:
         
         # Display IBNR Summary (Total per Line of Business)
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader(f"IBNR Summary by {', '.join(index_cols)}")
+        st.subheader(f"IBNR Summary by {', '.join(index_cols)} (Total)")
         display_summary = ibnr_summary.copy()
         for col in value_cols:
             if col in display_summary.columns:
                 display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
-        # Also format AccidentYear if present (it won't be in summary if we grouped correctly)
-        if 'AccidentYear' in display_summary.columns:
-            display_summary = display_summary.drop(columns=['AccidentYear'])
         st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -394,11 +399,7 @@ if uploaded_file is not None:
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             # Sheet 1: IBNR Summary (Total per Line of Business)
-            # Remove AccidentYear if present
-            export_summary = ibnr_summary.copy()
-            if 'AccidentYear' in export_summary.columns:
-                export_summary = export_summary.drop(columns=['AccidentYear'])
-            export_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             
             # Sheet 2: IBNR by Accident Year (Detailed)
             ibnr_detailed.to_excel(writer, index=False, sheet_name='IBNR_By_AccidentYear')
