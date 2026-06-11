@@ -334,10 +334,16 @@ if uploaded_file is not None:
         # Reset index to make Line_of_Business a column
         ibnr_summary_df = ibnr_summary_df.reset_index()
         ibnr_summary_df = ibnr_summary_df.rename(columns={'index': lob_col})
-        
+
+
         # Also reset index for detailed view
         ibnr_detailed_df = ibnr_df.reset_index()
-        ibnr_detailed_df = ibnr_detailed_df.rename(columns={'index': lob_col, 'values': amount_col, 'origin': 'AccidentYear'})
+        # Rename 'values' to the user's amount column name, and 'origin' to 'AccidentYear'
+        ibnr_detailed_df = ibnr_detailed_df.rename(columns={'values': amount_col, 'origin': 'AccidentYear', 'index': lob_col})
+        
+        # Also reset index for detailed view
+        #ibnr_detailed_df = ibnr_df.reset_index()
+        #ibnr_detailed_df = ibnr_detailed_df.rename(columns={'index': lob_col, 'values': amount_col, 'origin': 'AccidentYear'})
 
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
