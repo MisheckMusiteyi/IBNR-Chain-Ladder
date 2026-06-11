@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 7.0 - Direct IBNR extraction from model
+Version: 9.0 - Based on your exact manual workflow
 """
 
 import streamlit as st
@@ -11,10 +11,6 @@ import chainladder as cl
 from io import BytesIO
 from datetime import date
 import re
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
@@ -242,30 +238,31 @@ if uploaded_file is not None:
 
         st.markdown("""
         <div class="grouping-container">
-            <h3>Grouping Columns</h3>
-            <p>Select columns to group by (e.g., Line_of_Business)</p>
+            <h3>Index/Grouping Column</h3>
+            <p>Select the column to use as index (e.g., Line_of_Business)</p>
         </div>
         """, unsafe_allow_html=True)
         
         group_options = [c for c in all_cols if c not in [loss_col, report_col]]
-        index_cols = st.multiselect("Group by:", options=group_options)
-        if not index_cols:
-            st.error("Select at least one grouping column.")
+        index_col = st.selectbox("Index column:", options=[""] + group_options, label_visibility="collapsed")
+        if not index_col:
+            st.error("Select an index/grouping column.")
             st.stop()
 
         st.markdown("---")
-        st.markdown("### Select Numeric Columns (Claim Amounts)")
-        num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
+        st.markdown("### Select Numeric Column (Claim Amount)")
+        num_options = [c for c in all_cols if c not in [loss_col, report_col, index_col]]
         
-        value_cols = st.multiselect("Numeric columns:", options=num_options)
+        value_col = st.selectbox("Numeric column (claim amount):", options=[""] + num_options, label_visibility="collapsed")
         
-        if not value_cols:
-            st.error("Select at least one numeric column.")
+        if not value_col:
+            st.error("Select a numeric column.")
             st.stop()
 
-        st.write(f"Selected numeric columns: {value_cols}")
+        st.write(f"Selected numeric column: {value_col}")
 
-        # --- PROCESS DATA ---
+        # --- PROCESS DATA (EXACTLY LIKE YOUR MANUAL WORKFLOW) ---
+        # Convert dates
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
         
@@ -283,7 +280,7 @@ if uploaded_file is not None:
         
         # Check missing values
         missing = []
-        for col in [loss_col, report_col] + index_cols + value_cols:
+        for col in [loss_col, report_col, index_col, value_col]:
             cnt = df_filtered[col].isna().sum()
             if cnt > 0:
                 missing.append(f"{col} ({cnt})")
@@ -307,64 +304,54 @@ if uploaded_file is not None:
             st.markdown('<div class="data-check-container">✅ No duplicates found</div>', unsafe_allow_html=True)
         
         # Clean numeric values
-        for col in value_cols:
-            if df_filtered[col].dtype == 'object':
-                cleaned = df_filtered[col].astype(str).str.replace(r'[$,€£]', '', regex=True)
-                cleaned = cleaned.str.replace(r',', '', regex=False)
-                cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
-                cleaned = cleaned.str.strip().replace('', '0')
-                df_filtered[col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
+        if df_filtered[value_col].dtype == 'object':
+            cleaned = df_filtered[value_col].astype(str).str.replace(r'[$,€£]', '', regex=True)
+            cleaned = cleaned.str.replace(r',', '', regex=False)
+            cleaned = cleaned.str.replace(r'^\((.+)\)$', r'-\1', regex=True)
+            cleaned = cleaned.str.strip().replace('', '0')
+            df_filtered[value_col] = pd.to_numeric(cleaned, errors='coerce').fillna(0)
         
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE AND RUN CHAIN LADDER ---
+        # --- CREATE TRIANGLE AND RUN CHAIN LADDER (EXACTLY LIKE YOUR MANUAL WORKFLOW) ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
-            triangle_col = value_cols[0]
-            
+            # Step 1: Create triangle (like your triangle_1)
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin=loss_col,
                 development=report_col,
-                columns=triangle_col,
-                index=index_cols if len(index_cols) > 1 else index_cols[0],
+                columns=value_col,
+                index=index_col,
                 cumulative=False,
                 grain=grain
             )
             
+            # Step 2: Fit model (like your cl_model = cl.Chainladder().fit(triangle_1))
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- SIMPLIFIED: USE MODEL.IBNR_ DIRECTLY ---
-        # Get IBNR directly from the model (already correct)
+        # Step 3: Get IBNR (like your ibnr = cl_model.ibnr_)
         ibnr = model.ibnr_
         
-        # Convert to DataFrame
-        ibnr_df = ibnr.to_frame().reset_index()
+        # Step 4: Convert to DataFrame (like your ibnr_df = ibnr.to_frame())
+        ibnr_df = ibnr.to_frame()
         
-        # Get the index column name (LOB column)
-        lob_col_name = index_cols[0] if len(index_cols) == 1 else 'index'
+        # Step 5: Sum across rows (axis=1) to get total IBNR by Line of Business
+        # This is exactly what you did: ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=currency_columns[0])
+        ibnr_summary = ibnr_df.sum(axis=1).to_frame(name=value_col)
         
-        # The ibnr_df has columns: [index_cols, 'origin', 'values']
-        # 'values' contains the IBNR amount
+        # Reset index to make Line_of_Business a column (for display)
+        ibnr_summary = ibnr_summary.reset_index()
         
-        # Summary by LOB (sum IBNR across all accident years)
-        ibnr_summary = ibnr_df.groupby(lob_col_name)['values'].sum().reset_index()
-        ibnr_summary.columns = [lob_col_name, f'IBNR_{value_cols[0]}']
-        
-        # Detailed by accident year (for display)
-        ibnr_detailed = ibnr_df[ibnr_df['values'] > 0].copy()
-        ibnr_detailed = ibnr_detailed.rename(columns={'values': 'IBNR', 'origin': 'AccidentYear'})
-        
-        # Remove the 'index' column if it exists
-        if 'index' in ibnr_detailed.columns:
-            ibnr_detailed = ibnr_detailed.drop(columns=['index'])
+        # Also get detailed IBNR by accident year (optional)
+        ibnr_detailed = ibnr_df.reset_index()
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
-        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {', '.join(index_cols)}")
-        st.markdown(f"**Claim Amount Column:** {value_cols[0]}")
+        st.markdown(f"**Grain:** {grain_label} | **Grouped by:** {index_col}")
+        st.markdown(f"**Claim Amount Column:** {value_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
@@ -372,7 +359,7 @@ if uploaded_file is not None:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("IBNR Summary by Line of Business")
             display_summary = ibnr_summary.copy()
-            display_summary[f'IBNR_{value_cols[0]}'] = display_summary[f'IBNR_{value_cols[0]}'].apply(lambda x: f"{x:,.2f}")
+            display_summary[value_col] = display_summary[value_col].apply(lambda x: f"{x:,.2f}")
             st.dataframe(display_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -380,12 +367,14 @@ if uploaded_file is not None:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("IBNR by Accident Year")
             display_detailed = ibnr_detailed.copy()
+            # Rename the values column
+            display_detailed = display_detailed.rename(columns={'values': 'IBNR', 'origin': 'AccidentYear'})
             display_detailed['IBNR'] = display_detailed['IBNR'].apply(lambda x: f"{x:,.2f}")
             st.dataframe(display_detailed, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # Display ultimate triangle
-        ultimate_df = model.ultimate_.to_frame().reset_index()
+        ultimate_df = model.ultimate_.to_frame()
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Ultimate Claims Triangle")
         st.dataframe(ultimate_df, use_container_width=True)
@@ -403,7 +392,7 @@ if uploaded_file is not None:
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             ibnr_detailed.to_excel(writer, index=False, sheet_name='IBNR_Detailed')
-            ultimate_df.to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
+            ultimate_df.reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
             ldfs_df.to_excel(writer, sheet_name='LDFs')
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
         
@@ -419,7 +408,7 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error: {str(e)}")
         st.write("Please check your file format and column selections.")
-        logger.exception("Application error")
+        st.write("Make sure your Excel file has the correct column names.")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
