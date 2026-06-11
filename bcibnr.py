@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 15.0 - Fixed column naming for display
+Version: 16.0 - Simplified display (Summary only)
 """
 
 import streamlit as st
@@ -328,20 +328,12 @@ if uploaded_file is not None:
         ibnr_df = ibnr.to_frame()
         
         # Step 3: Create summary by Line of Business (sum across rows)
+        # This is exactly: ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=currency_columns[0])
         ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=amount_col)
         
         # Reset index and rename columns
         ibnr_summary_df = ibnr_summary_df.reset_index()
         ibnr_summary_df = ibnr_summary_df.rename(columns={'index': lob_col})
-        
-        # Step 4: Create detailed view by accident year
-        ibnr_detailed_df = ibnr_df.reset_index()
-        # IMPORTANT: Rename 'values' to the user's amount column name
-        ibnr_detailed_df = ibnr_detailed_df.rename(columns={
-            'values': amount_col, 
-            'origin': 'AccidentYear', 
-            'index': lob_col
-        })
 
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -351,20 +343,12 @@ if uploaded_file is not None:
         st.markdown(f"**Claim Amount Column:** {amount_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display IBNR Summary
+        # Display IBNR Summary (only)
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Summary by {lob_col}")
         display_summary = ibnr_summary_df.copy()
         display_summary[amount_col] = display_summary[amount_col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_summary, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Display IBNR by Accident Year
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("IBNR by Accident Year")
-        display_detailed = ibnr_detailed_df.copy()
-        display_detailed[amount_col] = display_detailed[amount_col].apply(lambda x: f"{x:,.2f}")
-        st.dataframe(display_detailed, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display ultimate triangle
@@ -385,7 +369,6 @@ if uploaded_file is not None:
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             ibnr_summary_df.to_excel(writer, index=False, sheet_name='IBNR_Summary')
-            ibnr_detailed_df.to_excel(writer, index=False, sheet_name='IBNR_Detailed')
             ultimate_df.reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
             ldfs_df.to_excel(writer, sheet_name='LDFs')
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
