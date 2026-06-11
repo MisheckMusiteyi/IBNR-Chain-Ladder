@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 21.0 - Proper handling of multiple numeric columns
+Version: 22.0 - Fixed cumulative triangle access
 """
 
 import streamlit as st
@@ -352,11 +352,32 @@ if uploaded_file is not None:
         
         # Now ibnr_df has: index_cols + value_cols
         # This is already our summary! No need to group further
-        
-        # For display, ensure all columns are present
         ibnr_summary = ibnr_df.copy()
         
-        # --- DISPLAY RESULTS ---
+        # --- FIX: Get cumulative triangles correctly ---
+        # For original cumulative triangle, we can compute it from the incremental triangle
+        # Get the incremental triangle as DataFrame
+        inc_df = triangle.to_frame()
+        
+        # Convert incremental to cumulative by grouping by the index levels and cumsum
+        # The index has levels: grouping columns + origin
+        inc_df_reset = inc_df.reset_index()
+        
+        # Get the origin column name (it's usually 'origin' or the column name)
+        origin_col = 'origin' if 'origin' in inc_df_reset.columns else inc_df_reset.columns[0]
+        
+        # Calculate cumulative sum by grouping columns (excluding origin)
+        group_cols = [c for c in index_cols if c in inc_df_reset.columns]
+        inc_df_reset['value'] = inc_df_reset['values'].fillna(0)
+        inc_df_reset['cumulative'] = inc_df_reset.groupby(group_cols)['value'].cumsum()
+        
+        # Pivot to get cumulative triangle format
+        original_cumulative = inc_df_reset.pivot_table(
+            index=group_cols + [origin_col],
+            columns='development',
+            values='cumulative'
+        ).fillna(0)
+        
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
         st.markdown(f"**Grain:** {grain_label}")
@@ -373,12 +394,14 @@ if uploaded_file is not None:
         st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display Ultimate Triangle for first column (or all)
+        # Display Ultimate Triangle
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Ultimate Claims Triangle")
-        st.dataframe(model.ultimate_.to_frame(), use_container_width=True)
+        ultimate_df = model.ultimate_.to_frame()
+        st.dataframe(ultimate_df, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Display LDFs
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
         st.dataframe(model.ldf_.to_frame(), use_container_width=True)
@@ -396,8 +419,8 @@ if uploaded_file is not None:
             # Sheet 3: LDFs
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Sheet 4: Original Cumulative Triangle
-            triangle.cumulative_.to_frame().to_excel(writer, sheet_name='Original_Triangle_Cumulative')
+            # Sheet 4: Original Incremental Triangle
+            triangle.to_frame().to_excel(writer, sheet_name='Incremental_Triangle_Original')
             
             # Sheet 5: Projected Cumulative Triangle
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Cumulative')
