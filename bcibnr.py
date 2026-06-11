@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 33.0 - Restored working IBNR_Summary sheet
+Version: 34.0 - Fixed numeric column selection for IBNR summary
 """
 
 import streamlit as st
@@ -330,16 +330,18 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- EXTRACT IBNR SUMMARY (WORKING VERSION FROM VERSION 18) ---
+        # --- EXTRACT IBNR SUMMARY (FIXED - only numeric columns) ---
         ibnr = model.ibnr_
         ibnr_df = ibnr.to_frame()
         
-        # Sum across columns (axis=1) to get total per line of business
+        # Select only numeric columns (exclude Timestamp/Period columns)
+        numeric_cols = ibnr_df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Sum across numeric columns only (axis=1) to get total per line of business
         if len(value_cols) == 1:
-            ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=value_cols[0])
+            ibnr_summary_df = ibnr_df[numeric_cols].sum(axis=1).to_frame(name=value_cols[0])
         else:
-            # For multiple columns, sum across all columns
-            ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name='Total_IBNR')
+            ibnr_summary_df = ibnr_df[numeric_cols].sum(axis=1).to_frame(name='Total_IBNR')
         
         ibnr_summary_df = ibnr_summary_df.reset_index()
         
@@ -360,7 +362,7 @@ if uploaded_file is not None:
         st.subheader(f"IBNR Summary")
         display_summary = ibnr_summary_df.copy()
         for col in display_summary.columns:
-            if col != index_cols[0] if len(index_cols) == 1 else col != 'Group':
+            if col not in index_cols and col != 'Group':
                 display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
