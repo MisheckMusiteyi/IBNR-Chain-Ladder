@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 17.0 - Added incremental triangle to Excel output
+Version: 19.0 - Fixed cumulative triangle display
 """
 
 import streamlit as st
@@ -352,7 +352,7 @@ if uploaded_file is not None:
         st.dataframe(model.ldf_.to_frame(), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- EXPORT TO EXCEL WITH ALL SHEETS ---
+        # --- EXPORT TO EXCEL WITH PROPERLY NAMED SHEETS ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             # Sheet 1: IBNR Summary
@@ -361,23 +361,32 @@ if uploaded_file is not None:
             # Sheet 2: Ultimate Triangle
             model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
             
-            # Sheet 3: Completed Triangle (Cumulative)
-            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle_Cumulative')
+            # Sheet 3: Completed Cumulative Triangle (use triangle.cumulative_ for original cumulative)
+            original_cumulative = triangle.cumulative_.to_frame()
+            original_cumulative.to_excel(writer, sheet_name='Original_Triangle_Cumulative')
             
-            # Sheet 4: Incremental Triangle (Original data in triangle format)
-            # Convert the original triangle to incremental format
-            incremental_triangle = triangle.to_frame()
-            incremental_triangle.to_excel(writer, sheet_name='Incremental_Triangle_Original')
+            # Sheet 4: Completed Projected Cumulative Triangle (from model)
+            projected_cumulative = model.full_triangle_.to_frame()
+            projected_cumulative.to_excel(writer, sheet_name='Projected_Triangle_Cumulative')
             
-            # Sheet 5: Projected Incremental Triangle (from model)
+            # Sheet 5: Original Incremental Triangle (from your input data)
+            incremental_original = triangle.to_frame()
+            incremental_original.to_excel(writer, sheet_name='Incremental_Triangle_Original')
+            
+            # Sheet 6: Projected Incremental Triangle (converted from cumulative)
             if hasattr(model.full_triangle_, 'incr_to_incremental'):
                 projected_incremental = model.full_triangle_.incr_to_incremental().to_frame()
                 projected_incremental.to_excel(writer, sheet_name='Incremental_Triangle_Projected')
+            else:
+                # Alternative: convert cumulative to incremental by subtracting previous period
+                cum_df = model.full_triangle_.to_frame()
+                inc_df = cum_df - cum_df.groupby(level=0).shift(1, fill_value=0)
+                inc_df.to_excel(writer, sheet_name='Incremental_Triangle_Projected')
             
-            # Sheet 6: LDFs
+            # Sheet 7: Loss Development Factors
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Sheet 7: IBNR Detailed by Origin (if you want)
+            # Sheet 8: IBNR Detailed by Origin
             ibnr.to_frame().reset_index().to_excel(writer, index=False, sheet_name='IBNR_By_Origin')
         
         output.seek(0)
