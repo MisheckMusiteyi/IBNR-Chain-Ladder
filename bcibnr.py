@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 5.0 - Simplified direct IBNR extraction
+Version: 6.0 - Dynamic column handling
 """
 
 import streamlit as st
@@ -335,26 +335,45 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- SIMPLIFIED IBNR EXTRACTION ---
+        # --- SIMPLIFIED IBNR EXTRACTION WITH DYNAMIC COLUMN HANDLING ---
         # Directly use model.ibnr_ - it already contains the correct IBNR values
         ibnr = model.ibnr_
         
         # Convert to DataFrame
         ibnr_df = ibnr.to_frame().reset_index()
         
-        # The ibnr_df has columns: index_cols, 'origin', 'values'
+        # Debug: Show the actual column names (remove after testing)
+        st.write("Debug - IBNR DataFrame columns:", ibnr_df.columns.tolist())
+        
+        # Find the value column (it could be 'values', 'value', or the original column name)
+        value_column = None
+        for col in ibnr_df.columns:
+            if col not in index_cols and col != 'origin' and col != 'index':
+                value_column = col
+                break
+        
+        if value_column is None:
+            st.error("Could not find the IBNR value column in the output.")
+            st.stop()
+        
+        st.write(f"Debug - Using value column: '{value_column}'")
+        
         # Sum by grouping columns to get total IBNR per line of business
         if len(index_cols) == 1:
-            ibnr_summary = ibnr_df.groupby(index_cols[0])['values'].sum().reset_index()
+            ibnr_summary = ibnr_df.groupby(index_cols[0])[value_column].sum().reset_index()
             ibnr_summary.columns = [index_cols[0], f'IBNR_{value_cols[0]}']
         else:
             # Multiple grouping columns
-            ibnr_summary = ibnr_df.groupby(index_cols)['values'].sum().reset_index()
-            ibnr_summary.rename(columns={'values': f'IBNR_{value_cols[0]}'}, inplace=True)
+            ibnr_summary = ibnr_df.groupby(index_cols)[value_column].sum().reset_index()
+            ibnr_summary.rename(columns={value_column: f'IBNR_{value_cols[0]}'}, inplace=True)
         
         # Also get detailed by accident year
-        ibnr_detailed = ibnr_df[ibnr_df['values'] > 0].copy()
-        ibnr_detailed = ibnr_detailed.rename(columns={'values': 'IBNR', 'origin': 'AccidentYear'})
+        ibnr_detailed = ibnr_df[ibnr_df[value_column] > 0].copy()
+        ibnr_detailed = ibnr_detailed.rename(columns={value_column: 'IBNR', 'origin': 'AccidentYear'})
+        
+        # Remove debug columns from display
+        if 'index' in ibnr_detailed.columns:
+            ibnr_detailed = ibnr_detailed.drop(columns=['index'])
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
