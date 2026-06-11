@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 10.0 - Exactly matching your manual workflow
+Version: 11.0 - Fixed column naming
 """
 
 import streamlit as st
@@ -261,7 +261,7 @@ if uploaded_file is not None:
 
         st.write(f"Selected numeric column: {value_col}")
 
-        # --- PROCESS DATA (EXACTLY LIKE YOUR MANUAL WORKFLOW) ---
+        # --- PROCESS DATA ---
         # Convert dates
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
@@ -314,9 +314,8 @@ if uploaded_file is not None:
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE AND RUN CHAIN LADDER (EXACTLY LIKE YOUR MANUAL WORKFLOW) ---
+        # --- CREATE TRIANGLE AND RUN CHAIN LADDER ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
-            # Step 1: Create triangle (like your triangle_1)
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin=loss_col,
@@ -327,7 +326,6 @@ if uploaded_file is not None:
                 grain=grain
             )
             
-            # Step 2: Fit model (like your cl_model = cl.Chainladder().fit(triangle_1))
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
@@ -339,14 +337,15 @@ if uploaded_file is not None:
         ibnr_df = ibnr.to_frame()
         
         # Step 3: Sum across rows (axis=1) to get total by Line of Business
-        # This is exactly: ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=currency_columns[0])
         ibnr_summary = ibnr_df.sum(axis=1).to_frame(name=value_col)
         
         # Reset index to make Line_of_Business a column
         ibnr_summary = ibnr_summary.reset_index()
         
-        # Also get detailed by accident year (optional - your ibnr_df already has it)
+        # Also get detailed by accident year
         ibnr_detailed = ibnr_df.reset_index()
+        # Rename columns for clarity
+        ibnr_detailed = ibnr_detailed.rename(columns={'values': value_col, 'origin': 'AccidentYear'})
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -355,7 +354,7 @@ if uploaded_file is not None:
         st.markdown(f"**Claim Amount Column:** {value_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display IBNR Summary (same as your final output)
+        # Display IBNR Summary
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("IBNR Summary by Line of Business")
         display_summary = ibnr_summary.copy()
@@ -367,12 +366,7 @@ if uploaded_file is not None:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("IBNR by Accident Year")
         display_detailed = ibnr_detailed.copy()
-        # Rename columns for clarity
-        display_detailed = display_detailed.rename(columns={'values': 'IBNR', 'origin': 'AccidentYear'})
-        display_detailed['IBNR'] = display_detailed['IBNR'].apply(lambda x: f"{x:,.2f}")
-        # Drop any extra index columns
-        if 'index' in display_detailed.columns:
-            display_detailed = display_detailed.drop(columns=['index'])
+        display_detailed[value_col] = display_detailed[value_col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_detailed, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
