@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 23.0 - Simplified, working with multiple columns
+Version: 24.0 - Added totals row and fixed sheet name
 """
 
 import streamlit as st
@@ -351,6 +351,18 @@ if uploaded_file is not None:
         # Now ibnr_df has: index_cols + value_cols
         ibnr_summary = ibnr_df.copy()
         
+        # --- ADD TOTALS ROW TO IBNR SUMMARY ---
+        # Create totals row
+        totals = {}
+        for col in index_cols:
+            totals[col] = 'TOTAL'
+        for col in value_cols:
+            if col in ibnr_summary.columns:
+                totals[col] = ibnr_summary[col].sum()
+        
+        totals_df = pd.DataFrame([totals])
+        ibnr_summary_with_totals = pd.concat([ibnr_summary, totals_df], ignore_index=True)
+        
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
@@ -361,7 +373,7 @@ if uploaded_file is not None:
         
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Summary by {', '.join(index_cols)}")
-        display_summary = ibnr_summary.copy()
+        display_summary = ibnr_summary_with_totals.copy()
         for col in value_cols:
             if col in display_summary.columns:
                 display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "0.00")
@@ -385,8 +397,8 @@ if uploaded_file is not None:
         # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Sheet 1: IBNR Summary
-            ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            # Sheet 1: IBNR Summary (with totals)
+            ibnr_summary_with_totals.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             
             # Sheet 2: Ultimate Triangle
             model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
@@ -394,8 +406,8 @@ if uploaded_file is not None:
             # Sheet 3: LDFs
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Sheet 4: Projected Cumulative Triangle
-            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Cumulative')
+            # Sheet 4: Projected Incremental Triangle (renamed)
+            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Incremental')
         
         output.seek(0)
         
