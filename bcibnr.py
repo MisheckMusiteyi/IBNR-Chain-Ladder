@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 3.1 - Fixed multiple numeric column selection
+Version: 4.0 - Fixed IBNR calculation using cumulative latest diagonal
 """
 
 import streamlit as st
@@ -152,7 +152,7 @@ with col2:
 # IBNR Period
 st.markdown("""
 <div class="date-range-container">
-    <h3>📅 IBNR Period</h3>
+    <h3>IBNR Period</h3>
     <p>Select date range based on Loss Date</p>
 </div>
 """, unsafe_allow_html=True)
@@ -173,7 +173,7 @@ st.info(f"**Selected IBNR Period:** {from_date.date()} to {to_date.date()}")
 # Grain Selection
 st.markdown("""
 <div class="grain-container">
-    <h3>📊 Triangle Grain</h3>
+    <h3>Triangle Grain</h3>
     <p>Select time unit for grouping periods</p>
 </div>
 """, unsafe_allow_html=True)
@@ -242,7 +242,7 @@ if uploaded_file is not None:
 
         st.markdown("""
         <div class="grouping-container">
-            <h3>📊 Grouping Columns</h3>
+            <h3>Grouping Columns</h3>
             <p>Select columns to group by (e.g., Line_of_Business)</p>
         </div>
         """, unsafe_allow_html=True)
@@ -257,7 +257,6 @@ if uploaded_file is not None:
         st.markdown("### Select Numeric Columns (Claim Amounts)")
         num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
         
-        # FIXED: Always allow multiple selection, no single-column restriction
         value_cols = st.multiselect("Numeric columns:", options=num_options)
         
         if not value_cols:
@@ -321,8 +320,6 @@ if uploaded_file is not None:
 
         # --- CREATE TRIANGLE ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
-            # FIXED: Use the first numeric column for triangle (chainladder expects single column)
-            # This is correct - Chain Ladder runs on one column at a time
             triangle_col = value_cols[0]
             
             triangle = cl.Triangle(
@@ -338,12 +335,16 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- CALCULATE IBNR (Ultimate - Latest Diagonal) ---
+        # --- CALCULATE IBNR (Ultimate - Cumulative Latest Diagonal) ---
         # Get ultimate values
         ultimate_df = model.ultimate_.to_frame().reset_index()
         
-        # Get latest diagonal from original triangle
-        latest_diagonal = triangle.latest_diagonal.to_frame().reset_index()
+        # Get cumulative triangle (completed triangle from model)
+        cumulative_triangle = model.full_triangle_
+        
+        # Get the latest diagonal from the CUMULATIVE triangle
+        # This gives the cumulative paid to date for each origin period
+        latest_cumulative = cumulative_triangle.latest_diagonal.to_frame().reset_index()
         
         # Get the index column name (LOB column)
         lob_col_name = index_cols[0] if len(index_cols) == 1 else 'index'
@@ -360,26 +361,27 @@ if uploaded_file is not None:
         ultimate_long['AccidentYear'] = ultimate_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
         ultimate_long = ultimate_long.dropna(subset=['AccidentYear', 'Ultimate'])
         
-        # Melt latest diagonal to long format
+        # Melt latest cumulative to long format
         latest_long = pd.melt(
-            latest_diagonal,
+            latest_cumulative,
             id_vars=[lob_col_name],
             var_name='AccidentYear',
-            value_name='Latest'
+            value_name='Cumulative_Paid'
         )
         latest_long['AccidentYear'] = latest_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
-        latest_long = latest_long.dropna(subset=['AccidentYear', 'Latest'])
+        latest_long = latest_long.dropna(subset=['AccidentYear', 'Cumulative_Paid'])
         
-        # Merge and calculate IBNR
+        # Merge and calculate IBNR (Ultimate - Cumulative Paid)
         ibnr_calc = ultimate_long.merge(latest_long, on=[lob_col_name, 'AccidentYear'], how='left')
-        ibnr_calc['IBNR'] = ibnr_calc['Ultimate'] - ibnr_calc['Latest'].fillna(0)
+        ibnr_calc['IBNR'] = ibnr_calc['Ultimate'] - ibnr_calc['Cumulative_Paid'].fillna(0)
         
         # Summary by LOB
         ibnr_summary = ibnr_calc.groupby(lob_col_name)['IBNR'].sum().reset_index()
         ibnr_summary.columns = [lob_col_name, f'IBNR_{value_cols[0]}']
         
         # Detailed by accident year
-        ibnr_detailed = ibnr_calc[ibnr_calc['IBNR'] > 0][[lob_col_name, 'AccidentYear', 'Ultimate', 'Latest', 'IBNR']]
+        ibnr_detailed = ibnr_calc[ibnr_calc['IBNR'] > 0][[lob_col_name, 'AccidentYear', 'Ultimate', 'Cumulative_Paid', 'IBNR']]
+        ibnr_detailed.columns = [lob_col_name, 'AccidentYear', 'Ultimate', 'Cumulative_Paid', 'IBNR']
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -392,13 +394,19 @@ if uploaded_file is not None:
         with c1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("IBNR Summary by Line of Business")
-            st.dataframe(ibnr_summary, use_container_width=True)
+            display_summary = ibnr_summary.copy()
+            display_summary[f'IBNR_{value_cols[0]}'] = display_summary[f'IBNR_{value_cols[0]}'].apply(lambda x: f"{x:,.2f}")
+            st.dataframe(display_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         with c2:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("IBNR by Accident Year")
-            st.dataframe(ibnr_detailed, use_container_width=True)
+            display_detailed = ibnr_detailed.copy()
+            display_detailed['Ultimate'] = display_detailed['Ultimate'].apply(lambda x: f"{x:,.2f}")
+            display_detailed['Cumulative_Paid'] = display_detailed['Cumulative_Paid'].apply(lambda x: f"{x:,.2f}")
+            display_detailed['IBNR'] = display_detailed['IBNR'].apply(lambda x: f"{x:,.2f}")
+            st.dataframe(display_detailed, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # Display ultimate triangle
