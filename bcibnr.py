@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 25.0 - Fixed totals row calculation
+Version: 28.0 - Complete IBNR summary with totals and detailed view
 """
 
 import streamlit as st
@@ -14,7 +14,7 @@ import re
 
 st.set_page_config(page_title="Chain Ladder IBNR Calculator", layout="wide")
 
-# ---------- CUSTOM CSS (African Actuarial Consultants theme) ----------
+# ---------- CUSTOM CSS ----------
 st.markdown("""
 <style>
     .stApp { background-color: #FFFFFF; color: #000000; font-family: 'Calisto MT', serif; font-size: 11pt; }
@@ -208,7 +208,6 @@ if uploaded_file is not None:
         st.markdown("### Map Your Columns")
         all_cols = df.columns.tolist()
 
-        # Loss Date and Report Date (single selection)
         col1, col2 = st.columns(2)
         
         with col1:
@@ -235,11 +234,11 @@ if uploaded_file is not None:
 
         st.markdown("---")
 
-        # Grouping Columns (Multiple selection)
+        # Grouping Columns
         st.markdown("""
         <div class="grouping-container">
             <h3>Grouping Columns</h3>
-            <p>Select columns to group by (e.g., Line_of_Business, Region, Product Type)</p>
+            <p>Select columns to group by (e.g., Line_of_Business)</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -252,14 +251,13 @@ if uploaded_file is not None:
 
         st.markdown("---")
 
-        # Numeric Columns (Multiple selection)
+        # Numeric Columns
         st.markdown("### Select Numeric Columns (Claim Amounts)")
-        st.markdown("Select one or more columns that contain claim amounts to run Chain Ladder on each:")
         
         num_options = [c for c in all_cols if c not in [loss_col, report_col] + index_cols]
         
         if not num_options:
-            st.error("No numeric columns found. Please ensure your file contains claim amount columns.")
+            st.error("No numeric columns found.")
             st.stop()
         
         value_cols = st.multiselect("Select claim amount columns:", options=num_options)
@@ -275,7 +273,6 @@ if uploaded_file is not None:
         df[loss_col] = pd.to_datetime(df[loss_col], errors='coerce')
         df[report_col] = pd.to_datetime(df[report_col], errors='coerce')
         
-        # Filter by date range
         df_filtered = df[(df[loss_col] >= from_date) & (df[loss_col] <= to_date)].copy()
         
         if df_filtered.empty:
@@ -287,7 +284,6 @@ if uploaded_file is not None:
         # --- DATA QUALITY CHECKS ---
         st.markdown("### Data Quality Checks")
         
-        # Check missing values
         missing = []
         for col in [loss_col, report_col] + index_cols + value_cols:
             cnt = df_filtered[col].isna().sum()
@@ -298,21 +294,16 @@ if uploaded_file is not None:
             st.markdown(f'<div class="data-check-error">❌ Missing values: {", ".join(missing)}</div>', unsafe_allow_html=True)
             st.stop()
         
-        # Check date reasonability
         invalid = df_filtered[df_filtered[report_col] < df_filtered[loss_col]]
         if len(invalid) > 0:
             st.markdown(f'<div class="data-check-error">❌ {len(invalid)} rows with Report Date before Loss Date</div>', unsafe_allow_html=True)
             st.stop()
         
-        # Remove duplicates
         dup_count = df_filtered.duplicated().sum()
         if dup_count > 0:
             df_filtered = df_filtered.drop_duplicates()
             st.markdown(f'<div class="data-check-warning">⚠️ Removed {dup_count} duplicate rows</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="data-check-container">✅ No duplicates found</div>', unsafe_allow_html=True)
         
-        # Clean numeric values for all selected columns
         for col in value_cols:
             if df_filtered[col].dtype == 'object':
                 cleaned = df_filtered[col].astype(str).str.replace(r'[$,€£]', '', regex=True)
@@ -324,8 +315,8 @@ if uploaded_file is not None:
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE WITH MULTIPLE COLUMNS ---
-        with st.spinner("Creating triangle and running Chain Ladder..."):
+        # --- RUN CHAIN LADDER ---
+        with st.spinner("Running Chain Ladder..."):
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin=loss_col,
@@ -339,74 +330,78 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- EXTRACT IBNR FOR MULTIPLE COLUMNS ---
+        # --- EXTRACT IBNR RESULTS ---
         ibnr = model.ibnr_
+        ibnr_df = ibnr.to_frame().reset_index()
         
-        # Convert to DataFrame - with multiple columns, it will have one column per value_col
-        ibnr_df = ibnr.to_frame()
+        # Rename 'origin' to 'AccidentYear' for clarity
+        ibnr_df = ibnr_df.rename(columns={'origin': 'AccidentYear'})
         
-        # Reset index to make grouping columns regular columns
-        ibnr_df = ibnr_df.reset_index()
+        # Summary by grouping columns (total per Line of Business)
+        # This is what you want: Line_of_Business and total IBNR
+        if len(index_cols) == 1:
+            ibnr_summary = ibnr_df.groupby(index_cols[0])[value_cols].sum().reset_index()
+        else:
+            ibnr_summary = ibnr_df.groupby(index_cols)[value_cols].sum().reset_index()
         
-        # Now ibnr_df has: index_cols + value_cols
-        ibnr_summary = ibnr_df.copy()
-        
-        # --- ADD TOTALS ROW TO IBNR SUMMARY ---
-        # Create totals row by summing each numeric column across all rows
-        totals = {}
-        for col in index_cols:
-            totals[col] = 'TOTAL'
-        for col in value_cols:
-            if col in ibnr_summary.columns:
-                totals[col] = ibnr_summary[col].sum()
-        
-        totals_df = pd.DataFrame([totals])
-        ibnr_summary_with_totals = pd.concat([ibnr_summary, totals_df], ignore_index=True)
-        
+        # Detailed by accident year (for reference)
+        ibnr_detailed = ibnr_df.copy()
+
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
         st.markdown(f"**Grain:** {grain_label}")
         st.markdown(f"**Grouped by:** {', '.join(index_cols)}")
-        st.markdown(f"**Claim Amount Columns:** {', '.join(value_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Display IBNR Summary (Total per Line of Business)
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Summary by {', '.join(index_cols)}")
-        display_summary = ibnr_summary_with_totals.copy()
+        display_summary = ibnr_summary.copy()
         for col in value_cols:
             if col in display_summary.columns:
-                display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "0.00")
+                display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_summary, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Display IBNR by Accident Year (Detailed)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("IBNR by Accident Year (Detailed)")
+        display_detailed = ibnr_detailed.copy()
+        for col in value_cols:
+            if col in display_detailed.columns:
+                display_detailed[col] = display_detailed[col].apply(lambda x: f"{x:,.2f}")
+        st.dataframe(display_detailed, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display Ultimate Triangle
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Ultimate Claims Triangle")
-        ultimate_df = model.ultimate_.to_frame()
-        st.dataframe(ultimate_df, use_container_width=True)
+        st.dataframe(model.ultimate_.to_frame(), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display LDFs
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
-        ldfs_df = model.ldf_.to_frame()
-        st.dataframe(ldfs_df, use_container_width=True)
+        st.dataframe(model.ldf_.to_frame(), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
         # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Sheet 1: IBNR Summary (with totals)
-            ibnr_summary_with_totals.to_excel(writer, index=False, sheet_name='IBNR_Summary')
+            # Sheet 1: IBNR Summary (Total per Line of Business)
+            ibnr_summary.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             
-            # Sheet 2: Ultimate Triangle
+            # Sheet 2: IBNR by Accident Year (Detailed)
+            ibnr_detailed.to_excel(writer, index=False, sheet_name='IBNR_By_AccidentYear')
+            
+            # Sheet 3: Ultimate Triangle
             model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
             
-            # Sheet 3: LDFs
+            # Sheet 4: LDFs
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Sheet 4: Projected Incremental Triangle
+            # Sheet 5: Projected Incremental Triangle
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Incremental')
         
         output.seek(0)
@@ -415,12 +410,10 @@ if uploaded_file is not None:
         safe_original = re.sub(r'[\\/*?:"<>|]', "", base_filename).strip() or "Data"
         file_name = f"{safe_client}_{safe_original}_IBNR_Results_{from_date.year}_{to_date.year}.xlsx"
         
-        st.markdown("### Download Results")
         st.download_button("📥 Download Excel Report", data=output, file_name=file_name)
         
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        st.write("Please check your file format and column selections.")
         import traceback
         st.write(traceback.format_exc())
 
