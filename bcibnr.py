@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 30.0 - Fixed IBNR Summary to show totals per line of business
+Version: 31.0 - Dynamic column handling for IBNR summary
 """
 
 import streamlit as st
@@ -317,6 +317,7 @@ if uploaded_file is not None:
 
         # --- RUN CHAIN LADDER ---
         with st.spinner("Running Chain Ladder..."):
+            # If multiple value columns, pass as list
             triangle = cl.Triangle(
                 data=df_filtered,
                 origin=loss_col,
@@ -336,22 +337,26 @@ if uploaded_file is not None:
         # Convert to DataFrame and reset index
         ibnr_df = ibnr.to_frame().reset_index()
         
+        # Debug: Show what columns we have
+        st.write("Debug - IBNR DataFrame columns:", ibnr_df.columns.tolist())
+        
         # Rename 'origin' to 'AccidentYear' if it exists
         if 'origin' in ibnr_df.columns:
             ibnr_df = ibnr_df.rename(columns={'origin': 'AccidentYear'})
         
-        # Create IBNR Summary (Total per Line of Business)
-        # Sum across all accident year columns (the value columns are already the correct ones)
-        # The value columns are the ones the user selected (e.g., 'Claim_Amount')
-        # But actually, ibnr_df has the values in the value_cols columns, one per column
-        # For multiple value columns, we need to sum each one
+        # For IBNR Summary, we need to sum across accident years
+        # The numeric columns are the value_cols, but they might be named differently
+        # Let's identify which columns are numeric and are not the index columns
+        numeric_cols = [col for col in ibnr_df.columns if col not in index_cols and col != 'AccidentYear' and ibnr_df[col].dtype in ['float64', 'int64']]
+        
+        st.write("Debug - Identified numeric columns:", numeric_cols)
         
         if len(index_cols) == 1:
-            # Single grouping column (e.g., Line_of_Business)
-            ibnr_summary = ibnr_df.groupby(index_cols[0])[value_cols].sum().reset_index()
+            # Single grouping column
+            ibnr_summary = ibnr_df.groupby(index_cols[0])[numeric_cols].sum().reset_index()
         else:
             # Multiple grouping columns
-            ibnr_summary = ibnr_df.groupby(index_cols)[value_cols].sum().reset_index()
+            ibnr_summary = ibnr_df.groupby(index_cols)[numeric_cols].sum().reset_index()
         
         # Detailed by accident year (keep as is)
         ibnr_detailed = ibnr_df.copy()
@@ -367,7 +372,7 @@ if uploaded_file is not None:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Summary by {', '.join(index_cols)} (Total)")
         display_summary = ibnr_summary.copy()
-        for col in value_cols:
+        for col in numeric_cols:
             if col in display_summary.columns:
                 display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_summary, use_container_width=True)
@@ -377,7 +382,7 @@ if uploaded_file is not None:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("IBNR by Accident Year (Detailed)")
         display_detailed = ibnr_detailed.copy()
-        for col in value_cols:
+        for col in numeric_cols:
             if col in display_detailed.columns:
                 display_detailed[col] = display_detailed[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(display_detailed, use_container_width=True)
