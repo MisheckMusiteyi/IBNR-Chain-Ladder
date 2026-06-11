@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 16.0 - Simplified display (Summary only)
+Version: 17.0 - Added incremental triangle to Excel output
 """
 
 import streamlit as st
@@ -320,18 +320,10 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- EXACTLY YOUR MANUAL WORKFLOW FOR IBNR ---
-        # Step 1: Get IBNR
+        # --- EXTRACT IBNR SUMMARY ---
         ibnr = model.ibnr_
-        
-        # Step 2: Convert to DataFrame
         ibnr_df = ibnr.to_frame()
-        
-        # Step 3: Create summary by Line of Business (sum across rows)
-        # This is exactly: ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=currency_columns[0])
         ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=amount_col)
-        
-        # Reset index and rename columns
         ibnr_summary_df = ibnr_summary_df.reset_index()
         ibnr_summary_df = ibnr_summary_df.rename(columns={'index': lob_col})
 
@@ -343,7 +335,6 @@ if uploaded_file is not None:
         st.markdown(f"**Claim Amount Column:** {amount_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display IBNR Summary (only)
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Summary by {lob_col}")
         display_summary = ibnr_summary_df.copy()
@@ -351,27 +342,43 @@ if uploaded_file is not None:
         st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display ultimate triangle
-        ultimate_df = model.ultimate_.to_frame()
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Ultimate Claims Triangle")
-        st.dataframe(ultimate_df, use_container_width=True)
+        st.dataframe(model.ultimate_.to_frame(), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display LDFs
-        ldfs_df = model.ldf_.to_frame()
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Loss Development Factors")
-        st.dataframe(ldfs_df, use_container_width=True)
+        st.dataframe(model.ldf_.to_frame(), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # --- EXPORT TO EXCEL ---
+
+        # --- EXPORT TO EXCEL WITH ALL SHEETS ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Sheet 1: IBNR Summary
             ibnr_summary_df.to_excel(writer, index=False, sheet_name='IBNR_Summary')
-            ultimate_df.reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
-            ldfs_df.to_excel(writer, sheet_name='LDFs')
-            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle')
+            
+            # Sheet 2: Ultimate Triangle
+            model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
+            
+            # Sheet 3: Completed Triangle (Cumulative)
+            model.full_triangle_.to_frame().to_excel(writer, sheet_name='Completed_Triangle_Cumulative')
+            
+            # Sheet 4: Incremental Triangle (Original data in triangle format)
+            # Convert the original triangle to incremental format
+            incremental_triangle = triangle.to_frame()
+            incremental_triangle.to_excel(writer, sheet_name='Incremental_Triangle_Original')
+            
+            # Sheet 5: Projected Incremental Triangle (from model)
+            if hasattr(model.full_triangle_, 'incr_to_incremental'):
+                projected_incremental = model.full_triangle_.incr_to_incremental().to_frame()
+                projected_incremental.to_excel(writer, sheet_name='Incremental_Triangle_Projected')
+            
+            # Sheet 6: LDFs
+            model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
+            
+            # Sheet 7: IBNR Detailed by Origin (if you want)
+            ibnr.to_frame().reset_index().to_excel(writer, index=False, sheet_name='IBNR_By_Origin')
         
         output.seek(0)
         
