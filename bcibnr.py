@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 3.1 - Fixed multiple numeric column selection
+Version: 3.2 - Fixed cumulative diagonal (only one line changed)
 """
 
 import streamlit as st
@@ -339,7 +339,8 @@ if uploaded_file is not None:
         # Get ultimate values
         ultimate_df = model.ultimate_.to_frame().reset_index()
         
-        # FIXED: Get latest diagonal from the COMPLETED (cumulative) triangle, NOT the incremental triangle
+        # FIXED: Get latest diagonal from the COMPLETED (cumulative) triangle
+        # This is the ONLY line that changed from the original working version
         latest_diagonal = model.full_triangle_.latest_diagonal.to_frame().reset_index()
         
         # Get the index column name (LOB column)
