@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 32.0 - Removed IBNR_Summary sheet, keep detailed only
+Version: 33.0 - Restored working IBNR_Summary sheet
 """
 
 import streamlit as st
@@ -330,19 +330,25 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- EXTRACT IBNR RESULTS ---
+        # --- EXTRACT IBNR SUMMARY (WORKING VERSION FROM VERSION 18) ---
         ibnr = model.ibnr_
+        ibnr_df = ibnr.to_frame()
         
-        # Convert to DataFrame and reset index
-        ibnr_df = ibnr.to_frame().reset_index()
+        # Sum across columns (axis=1) to get total per line of business
+        if len(value_cols) == 1:
+            ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=value_cols[0])
+        else:
+            # For multiple columns, sum across all columns
+            ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name='Total_IBNR')
         
-        # Rename 'origin' to 'AccidentYear' if it exists
-        if 'origin' in ibnr_df.columns:
-            ibnr_df = ibnr_df.rename(columns={'origin': 'AccidentYear'})
+        ibnr_summary_df = ibnr_summary_df.reset_index()
         
-        # Detailed by accident year (keep as is)
-        ibnr_detailed = ibnr_df.copy()
-
+        # Rename the index column to the first grouping column name
+        if len(index_cols) == 1:
+            ibnr_summary_df = ibnr_summary_df.rename(columns={'index': index_cols[0]})
+        else:
+            ibnr_summary_df = ibnr_summary_df.rename(columns={'index': 'Group'})
+        
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader(f"IBNR Results for Period: {from_date.date()} to {to_date.date()}")
@@ -350,15 +356,13 @@ if uploaded_file is not None:
         st.markdown(f"**Grouped by:** {', '.join(index_cols)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Display IBNR by Accident Year (Detailed only)
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("IBNR by Accident Year (Detailed)")
-        display_detailed = ibnr_detailed.copy()
-        # Format numeric columns
-        for col in display_detailed.columns:
-            if col not in index_cols and col != 'AccidentYear':
-                display_detailed[col] = display_detailed[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "0.00")
-        st.dataframe(display_detailed, use_container_width=True)
+        st.subheader(f"IBNR Summary")
+        display_summary = ibnr_summary_df.copy()
+        for col in display_summary.columns:
+            if col != index_cols[0] if len(index_cols) == 1 else col != 'Group':
+                display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
+        st.dataframe(display_summary, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Display Ultimate Triangle
@@ -373,19 +377,19 @@ if uploaded_file is not None:
         st.dataframe(model.ldf_.to_frame(), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- EXPORT TO EXCEL (No IBNR_Summary sheet) ---
+        # --- EXPORT TO EXCEL ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Only export detailed IBNR, not the summary
-            ibnr_detailed.to_excel(writer, index=False, sheet_name='IBNR_By_AccidentYear')
+            # Sheet 1: IBNR Summary (Total per Line of Business)
+            ibnr_summary_df.to_excel(writer, index=False, sheet_name='IBNR_Summary')
             
-            # Ultimate Triangle
+            # Sheet 2: Ultimate Triangle
             model.ultimate_.to_frame().reset_index().to_excel(writer, index=False, sheet_name='Ultimate_Triangle')
             
-            # LDFs
+            # Sheet 3: LDFs
             model.ldf_.to_frame().to_excel(writer, sheet_name='LDFs')
             
-            # Projected Incremental Triangle
+            # Sheet 4: Projected Incremental Triangle
             model.full_triangle_.to_frame().to_excel(writer, sheet_name='Projected_Triangle_Incremental')
         
         output.seek(0)
