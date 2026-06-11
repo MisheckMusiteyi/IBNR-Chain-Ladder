@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 6.0 - Dynamic column handling
+Version: 3.1 - Fixed multiple numeric column selection
 """
 
 import streamlit as st
@@ -159,10 +159,10 @@ st.markdown("""
 
 col1, col2 = st.columns(2)
 with col1:
-    from_date = st.date_input("From Date", value=date(2021, 1, 1))
+    from_date = st.date_input("From Date", value=date(2020, 1, 1))
     st.caption("Claims with Loss Date on or after this date")
 with col2:
-    to_date = st.date_input("To Date", value=date(2025, 12, 31))
+    to_date = st.date_input("To Date", value=date(2024, 12, 31))
     st.caption("Claims with Loss Date on or before this date")
 
 from_date = pd.to_datetime(from_date)
@@ -318,7 +318,7 @@ if uploaded_file is not None:
         st.markdown('<div class="data-check-container">✅ Data quality checks passed</div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- CREATE TRIANGLE AND RUN CHAIN LADDER ---
+        # --- CREATE TRIANGLE ---
         with st.spinner("Creating triangle and running Chain Ladder..."):
             triangle_col = value_cols[0]
             
@@ -335,45 +335,49 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # --- SIMPLIFIED IBNR EXTRACTION WITH DYNAMIC COLUMN HANDLING ---
-        # Directly use model.ibnr_ - it already contains the correct IBNR values
-        ibnr = model.ibnr_
+        # --- CALCULATE IBNR (Ultimate - Cumulative Latest Diagonal) ---
+        # Get ultimate values
+        ultimate_df = model.ultimate_.to_frame().reset_index()
         
-        # Convert to DataFrame
-        ibnr_df = ibnr.to_frame().reset_index()
+        # FIXED: Get latest diagonal from the COMPLETED (cumulative) triangle, NOT the incremental triangle
+        latest_diagonal = model.full_triangle_.latest_diagonal.to_frame().reset_index()
         
-        # Debug: Show the actual column names (remove after testing)
-        st.write("Debug - IBNR DataFrame columns:", ibnr_df.columns.tolist())
+        # Get the index column name (LOB column)
+        lob_col_name = index_cols[0] if len(index_cols) == 1 else 'index'
         
-        # Find the value column (it could be 'values', 'value', or the original column name)
-        value_column = None
-        for col in ibnr_df.columns:
-            if col not in index_cols and col != 'origin' and col != 'index':
-                value_column = col
-                break
+        # Melt ultimate to long format
+        ultimate_long = pd.melt(
+            ultimate_df,
+            id_vars=[lob_col_name],
+            var_name='AccidentYear',
+            value_name='Ultimate'
+        )
         
-        if value_column is None:
-            st.error("Could not find the IBNR value column in the output.")
-            st.stop()
+        # Extract year from Period object
+        ultimate_long['AccidentYear'] = ultimate_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
+        ultimate_long = ultimate_long.dropna(subset=['AccidentYear', 'Ultimate'])
         
-        st.write(f"Debug - Using value column: '{value_column}'")
+        # Melt latest diagonal to long format
+        latest_long = pd.melt(
+            latest_diagonal,
+            id_vars=[lob_col_name],
+            var_name='AccidentYear',
+            value_name='Cumulative_Paid'
+        )
+        latest_long['AccidentYear'] = latest_long['AccidentYear'].astype(str).str.extract(r'(\d{4})')
+        latest_long = latest_long.dropna(subset=['AccidentYear', 'Cumulative_Paid'])
         
-        # Sum by grouping columns to get total IBNR per line of business
-        if len(index_cols) == 1:
-            ibnr_summary = ibnr_df.groupby(index_cols[0])[value_column].sum().reset_index()
-            ibnr_summary.columns = [index_cols[0], f'IBNR_{value_cols[0]}']
-        else:
-            # Multiple grouping columns
-            ibnr_summary = ibnr_df.groupby(index_cols)[value_column].sum().reset_index()
-            ibnr_summary.rename(columns={value_column: f'IBNR_{value_cols[0]}'}, inplace=True)
+        # Merge and calculate IBNR
+        ibnr_calc = ultimate_long.merge(latest_long, on=[lob_col_name, 'AccidentYear'], how='left')
+        ibnr_calc['IBNR'] = ibnr_calc['Ultimate'] - ibnr_calc['Cumulative_Paid'].fillna(0)
         
-        # Also get detailed by accident year
-        ibnr_detailed = ibnr_df[ibnr_df[value_column] > 0].copy()
-        ibnr_detailed = ibnr_detailed.rename(columns={value_column: 'IBNR', 'origin': 'AccidentYear'})
+        # Summary by LOB
+        ibnr_summary = ibnr_calc.groupby(lob_col_name)['IBNR'].sum().reset_index()
+        ibnr_summary.columns = [lob_col_name, f'IBNR_{value_cols[0]}']
         
-        # Remove debug columns from display
-        if 'index' in ibnr_detailed.columns:
-            ibnr_detailed = ibnr_detailed.drop(columns=['index'])
+        # Detailed by accident year
+        ibnr_detailed = ibnr_calc[ibnr_calc['IBNR'] > 0][[lob_col_name, 'AccidentYear', 'Ultimate', 'Cumulative_Paid', 'IBNR']]
+        ibnr_detailed.columns = [lob_col_name, 'AccidentYear', 'Ultimate', 'Cumulative_Paid', 'IBNR']
         
         # --- DISPLAY RESULTS ---
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -387,9 +391,7 @@ if uploaded_file is not None:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("IBNR Summary by Line of Business")
             display_summary = ibnr_summary.copy()
-            for col in display_summary.columns:
-                if col != index_cols[0] if len(index_cols) == 1 else col not in index_cols:
-                    display_summary[col] = display_summary[col].apply(lambda x: f"{x:,.2f}")
+            display_summary[f'IBNR_{value_cols[0]}'] = display_summary[f'IBNR_{value_cols[0]}'].apply(lambda x: f"{x:,.2f}")
             st.dataframe(display_summary, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -397,12 +399,13 @@ if uploaded_file is not None:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("IBNR by Accident Year")
             display_detailed = ibnr_detailed.copy()
+            display_detailed['Ultimate'] = display_detailed['Ultimate'].apply(lambda x: f"{x:,.2f}")
+            display_detailed['Cumulative_Paid'] = display_detailed['Cumulative_Paid'].apply(lambda x: f"{x:,.2f}")
             display_detailed['IBNR'] = display_detailed['IBNR'].apply(lambda x: f"{x:,.2f}")
             st.dataframe(display_detailed, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # Display ultimate triangle
-        ultimate_df = model.ultimate_.to_frame().reset_index()
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Ultimate Claims Triangle")
         st.dataframe(ultimate_df, use_container_width=True)
