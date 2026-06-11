@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Chain Ladder IBNR Calculator
-Version: 9.0 - Based on your exact manual workflow
+Version: 10.0 - Exactly matching your manual workflow
 """
 
 import streamlit as st
@@ -331,20 +331,21 @@ if uploaded_file is not None:
             model = cl.Chainladder().fit(triangle)
             st.success("✅ Model fitted successfully!")
 
-        # Step 3: Get IBNR (like your ibnr = cl_model.ibnr_)
+        # --- EXACTLY YOUR MANUAL WORKFLOW FOR IBNR ---
+        # Step 1: Get IBNR (like your ibnr = cl_model.ibnr_)
         ibnr = model.ibnr_
         
-        # Step 4: Convert to DataFrame (like your ibnr_df = ibnr.to_frame())
+        # Step 2: Convert to DataFrame (like your ibnr_df = ibnr.to_frame())
         ibnr_df = ibnr.to_frame()
         
-        # Step 5: Sum across rows (axis=1) to get total IBNR by Line of Business
-        # This is exactly what you did: ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=currency_columns[0])
+        # Step 3: Sum across rows (axis=1) to get total by Line of Business
+        # This is exactly: ibnr_summary_df = ibnr_df.sum(axis=1).to_frame(name=currency_columns[0])
         ibnr_summary = ibnr_df.sum(axis=1).to_frame(name=value_col)
         
-        # Reset index to make Line_of_Business a column (for display)
+        # Reset index to make Line_of_Business a column
         ibnr_summary = ibnr_summary.reset_index()
         
-        # Also get detailed IBNR by accident year (optional)
+        # Also get detailed by accident year (optional - your ibnr_df already has it)
         ibnr_detailed = ibnr_df.reset_index()
         
         # --- DISPLAY RESULTS ---
@@ -354,24 +355,26 @@ if uploaded_file is not None:
         st.markdown(f"**Claim Amount Column:** {value_col}")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR Summary by Line of Business")
-            display_summary = ibnr_summary.copy()
-            display_summary[value_col] = display_summary[value_col].apply(lambda x: f"{x:,.2f}")
-            st.dataframe(display_summary, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Display IBNR Summary (same as your final output)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("IBNR Summary by Line of Business")
+        display_summary = ibnr_summary.copy()
+        display_summary[value_col] = display_summary[value_col].apply(lambda x: f"{x:,.2f}")
+        st.dataframe(display_summary, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        with c2:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.subheader("IBNR by Accident Year")
-            display_detailed = ibnr_detailed.copy()
-            # Rename the values column
-            display_detailed = display_detailed.rename(columns={'values': 'IBNR', 'origin': 'AccidentYear'})
-            display_detailed['IBNR'] = display_detailed['IBNR'].apply(lambda x: f"{x:,.2f}")
-            st.dataframe(display_detailed, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Display detailed IBNR by accident year
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("IBNR by Accident Year")
+        display_detailed = ibnr_detailed.copy()
+        # Rename columns for clarity
+        display_detailed = display_detailed.rename(columns={'values': 'IBNR', 'origin': 'AccidentYear'})
+        display_detailed['IBNR'] = display_detailed['IBNR'].apply(lambda x: f"{x:,.2f}")
+        # Drop any extra index columns
+        if 'index' in display_detailed.columns:
+            display_detailed = display_detailed.drop(columns=['index'])
+        st.dataframe(display_detailed, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
         # Display ultimate triangle
         ultimate_df = model.ultimate_.to_frame()
@@ -408,7 +411,8 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error: {str(e)}")
         st.write("Please check your file format and column selections.")
-        st.write("Make sure your Excel file has the correct column names.")
+        import traceback
+        st.write(traceback.format_exc())
 
 st.markdown('</div>', unsafe_allow_html=True)
 
